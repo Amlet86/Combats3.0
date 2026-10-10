@@ -1,0 +1,17 @@
+# Build output
+target/
+out/
+dependency-reduced-pom.xml
+
+# Selenide screenshots on failure
+fails/
+
+# Raw page snapshots from the game: contain the character's personal data
+dom/
+
+# Credentials (now stored in ~/.combats/user-data.txt)
+User data.txt
+user-data.txt
+
+# IDEA personal files
+.idea/workspace.xml
