@@ -93,6 +93,8 @@
 | Мой ход | `commit` («Вперед (29 сек)»), `refresh2`, `clear_log` |
 | Мой ход в групповом/хаотичном бою | то же + `change_enemy` («Сменить противника (3)», число — сколько смен осталось) |
 | Ход сделан, ждём противника | `refresh` («Обновить»), `refresh2`, `clear_log` |
+| Я погиб, остальные ещё дерутся | `refresh`, `refresh2`, `clear_log`, `exit` («Выйти») |
+| После «Выйти», ~6 с | `refresh`, `refresh2`, `clear_log`; сообщение «Ожидайте выхода из боя» |
 | Бой закончен | только `gameover` («Вернуться»), `clear_log` |
 | После «Вернуться» (UI остаётся в DOM) | ни одной |
 
@@ -103,21 +105,34 @@
 | `button.UserBattleCommit[action=commit]` | «Вперёд!!!» — сделать ход |
 | `button.UserBattleKick[action=refresh]` | «Обновить» внизу, пока ждём противника |
 | `button.UserBattleEnd[action=gameover]` | «Вернуться» — конец боя |
-| `button.UserBattleKick[action=exit]` | «Выйти» |
+| `button.UserBattleKick[action=exit]` | «Выйти» — видна только после смерти, пока бой идёт |
 | `button.UserBattleRefresh[action=refresh2]` | «Обновить» в шапке |
 | `button.UserBattleClearLog[action=clear_log]` | очистить лог |
 | `hide_log`, `leader_change`, `leader_kill`, `change_enemy`, `focus_target`, `select_method_focus`, `showdead` | групповые бои, обычно скрыты |
 
 Внимание: класс `.UserBattleKick` у **двух** кнопок («Обновить» и «Выйти»), искать лучше по `action`.
 
-- Зоны: `.UserBattleAttack button.UserBattleRadio` и `.UserBattleDefend button.UserBattleRadio`,
-  по 5 штук (голова, грудь, живот, пояс, ноги). Блок закрывает три зоны подряд.
+- Зоны: 5 строк (голова, грудь, живот, пояс, ноги), `td.UserBattleAttack` и `td.UserBattleDefend`.
+  С 12.10.2026 у персонажа **2 удара и 1 блок**: в каждой строке атаки по кнопке
+  `button.UserBattleRadio` на каждый удар (левая — удар 1, правая — удар 2), итого 10; оба удара
+  можно направить в одну зону. Защита — 5 кнопок, блок закрывает **две** соседние зоны
+  («блок головы и груди», …). Выбранная кнопка: у `img.Absolute` внутри `style.left = -18px`;
+  серый фон (`rgb(176,176,176)`) подсвечивает столбец, который ещё не выбран.
 - Приёмы: в `td.UserBattleResources` 8 кнопок: доступные — `button.UserBattleMethod`,
   недоступные — `button.UserBattleMethodDisabled`. Видны только в момент хода. Пример иконок:
   `novice_def`, `novice_hit`, `novice_hp`, `hit_strong`, `block_activeshield`, `hp_regen`.
 - Сообщения: `td.UserBattleError` (их два, основной — `#UserBattleoBottomMessage`).
   В конце боя: «Бой закончен. Всего вами нанесено урона: N HP. Получено опыта: N.»;
-  пока ждёшь окончания боя после смерти — «Ждите окончания боя.».
+  после смерти, пока остальные дерутся, — «Для вас бой окончен. Ожидаем пока закончат и другие
+  игроки...» (первый `td.UserBattleError`).
+- Выход после смерти (снято 12.10.2026): «Выйти» → через ~1 с окно внутри страницы
+  `table.WindowNeitral` «Выход из боя» / «Уверены, что хотите выйти из боя?» с кнопками-картинками
+  `button.WindowOk` и `button.WindowCancel` (без текста; после закрытия окно остаётся в DOM скрытым) →
+  после «ОК» сообщение «Ожидайте выхода из боя». Дальше игра отпускает не сразу: надо несколько раз
+  нажать «Обновить» или «Вернуться» (какая видна; после «Вернуться» может снова появиться «Обновить»),
+  пока обе не пропадут → через ~10–20 с
+  `gameover` «Вернуться» с сообщением «Ждите окончания боя.» → город. Опыт за бой сохраняется,
+  новую заявку можно подать сразу, HP начинает восстанавливаться сразу.
 - Прочее: `#UserBattleoDamageLayer` (нанесённый урон), `#UserBattleHeal`, `#UserBattleMana`,
   `#UserBattleoGroupsLayer` (составы сторон), `#UserBattleoFullLog` (ссылка на лог боя),
   `#UserBattleoTimeoutLayer` («Бой идёт с таймаутом 1 мин.»).

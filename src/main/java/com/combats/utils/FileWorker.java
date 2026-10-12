@@ -1,16 +1,22 @@
 package com.combats.utils;
 
-import java.io.*;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Сохраняет и читает данные пользователя для автозаполнения формы:
- * логин, пароль, имя и токен Telegram-бота. Файл лежит вне проекта: ~/.combats/user-data.txt.
+ * Сохраняет и читает данные пользователя, чтобы форма заполнялась сама, а Telegram-бот
+ * запускался вместе с программой. Файл лежит вне проекта: ~/.combats/user-data.txt.
+ * <p>
+ * Строки файла: логин, пароль, владелец в Telegram, токен бота, прокси для Telegram, id чата владельца.
+ * Старый файл из 4 строк хранил в третьей строке имя бота, его при чтении пропускаем.
  */
 public class FileWorker {
 
@@ -19,50 +25,71 @@ public class FileWorker {
     private static final Path USER_DATA_FILE_PATH =
             Paths.get(System.getProperty("user.home"), ".combats", "user-data.txt");
 
+    private static final int OLD_FORMAT_LINES = 4;
+
     /**
      * Записывает текущие настройки пользователя в файл, создавая папку при необходимости.
+     * Вызывается из потока игры и из потока Telegram, поэтому synchronized.
      */
-    public static void writeUserDataFile() {
-        try {
-            Files.createDirectories(USER_DATA_FILE_PATH.getParent());
-        } catch (IOException e) {
-            log.error("Can't create directory {}", USER_DATA_FILE_PATH.getParent(), e);
-        }
-        try (FileWriter writer = new FileWriter(USER_DATA_FILE_PATH.toFile(), false)) {
-
-            writer.write(Properties.getUserLogin());
-            writer.append('\n');
-            writer.append(Properties.getUserPassword());
-            writer.append('\n');
-            writer.append(Properties.getTelegramBotName());
-            writer.append('\n');
-            writer.append(Properties.getTelegramBotToken());
-            writer.flush();
-
-        } catch (IOException e) {
-            log.error("Can't write user data file {}", USER_DATA_FILE_PATH, e);
-        }
+    public static synchronized void writeUserDataFile() {
+        writeUserDataFile(USER_DATA_FILE_PATH);
     }
 
     /**
-     * @return массив из 4 строк: логин, пароль, имя и токен Telegram-бота;
-     *         если файла нет (первый запуск), все элементы null
+     * Читает настройки пользователя из файла в {@link Properties}. Если файла нет (первый запуск),
+     * ничего не меняет.
      */
-    public static String[] readUserDataFile() {
-        String[] userData = new String[4];
-        if (!Files.exists(USER_DATA_FILE_PATH))
-            return userData;
-        try (BufferedReader br = new BufferedReader(new FileReader(USER_DATA_FILE_PATH.toFile()))) {
-            if (br.ready()) {
-                userData[0] = br.readLine();
-                userData[1] = br.readLine();
-                userData[2] = br.readLine();
-                userData[3] = br.readLine();
-            }
+    public static synchronized void readUserDataFile() {
+        readUserDataFile(USER_DATA_FILE_PATH);
+    }
+
+    static void writeUserDataFile(Path file) {
+        List<String> lines = List.of(
+                nullToEmpty(Properties.getUserLogin()),
+                nullToEmpty(Properties.getUserPassword()),
+                nullToEmpty(Properties.getTelegramOwner()),
+                nullToEmpty(Properties.getTelegramBotToken()),
+                nullToEmpty(Properties.getTelegramProxy()),
+                nullToEmpty(Properties.getTelegramChatId()));
+        try {
+            Files.createDirectories(file.getParent());
+            Files.write(file, lines, StandardCharsets.UTF_8);
         } catch (IOException e) {
-            log.error("Can't read user data file {}", USER_DATA_FILE_PATH, e);
+            log.error("Can't write user data file {}", file, e);
         }
-        return userData;
+    }
+
+    static void readUserDataFile(Path file) {
+        if (!Files.exists(file))
+            return;
+        List<String> lines;
+        try {
+            lines = new ArrayList<>(Files.readAllLines(file, StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            log.error("Can't read user data file {}", file, e);
+            return;
+        }
+        if (lines.size() == OLD_FORMAT_LINES)
+            lines.set(2, "");
+        Properties.setUserLogin(line(lines, 0));
+        Properties.setUserPassword(line(lines, 1));
+        Properties.setTelegramOwner(line(lines, 2));
+        Properties.setTelegramBotToken(line(lines, 3));
+        Properties.setTelegramProxy(line(lines, 4));
+        Properties.setTelegramChatId(line(lines, 5));
+    }
+
+    /**
+     * @return строка файла с номером index или null, если строки нет или она пустая
+     */
+    private static String line(List<String> lines, int index) {
+        if (index >= lines.size() || lines.get(index).isBlank())
+            return null;
+        return lines.get(index);
+    }
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
 }

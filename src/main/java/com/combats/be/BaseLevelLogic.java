@@ -69,17 +69,5 @@ class BaseLevelLogic {
             WebDriverRunner.getWebDriver().quit();
     }
 
-    /**
-     * Заготовка под скриншот для Telegram. Пока возвращает только адрес текущей страницы.
-     *
-     * @return адрес текущей страницы или null, если браузер не запущен
-     */
-    String takeScreenshot() {
-        if (WebDriverRunner.hasWebDriverStarted())
-            return WebDriverRunner.getWebDriver().getCurrentUrl();
-        else
-            return null;
-    }
-
 }
 

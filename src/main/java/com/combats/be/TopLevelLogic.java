@@ -3,6 +3,7 @@ package com.combats.be;
 import com.combats.pages.CityPage;
 import com.combats.exception.GameStoppedException;
 import com.combats.exception.GameTimeIsOverException;
+import com.combats.utils.Notifications;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,6 +16,7 @@ import static com.combats.utils.MapNavigator.prepareRoadFile;
 import static com.combats.utils.Properties.getTypeOfGame;
 import static com.combats.utils.Properties.isHeadless;
 import static com.combats.utils.Utils.hasGameTime;
+import static com.combats.utils.Utils.takeScreenshot;
 import static com.combats.utils.Utils.waitAboutSomeSeconds;
 
 /**
@@ -114,10 +116,22 @@ public class TopLevelLogic extends BaseLevelLogic {
                 }
                 log.warn("Error {} of {}, reload the page and continue", errorsInARow, MAX_ERRORS_IN_A_ROW, e);
                 status("Error " + errorsInARow + " of " + MAX_ERRORS_IN_A_ROW + ", reloading the page");
+                Notifications.photo("Error " + errorsInARow + " of " + MAX_ERRORS_IN_A_ROW + ": "
+                        + firstLine(e.getMessage()), takeScreenshot());
                 reloadPage();
             }
         }
         return "There isn't error, the game's end because timeout.";
+    }
+
+    /**
+     * @return первая строка сообщения об ошибке: у Selenide оно многострочное, с деталями для отладки
+     */
+    private static String firstLine(String message) {
+        if (message == null)
+            return "no message";
+        int end = message.indexOf('\n');
+        return end < 0 ? message : message.substring(0, end);
     }
 
     /**

@@ -21,14 +21,13 @@ public class CityPage extends BasePage {
 
     private static final Logger log = LoggerFactory.getLogger(CityPage.class);
 
-    private static final int RECOVERED_HP_PERCENT = 100;
+    private static final int RECOVERED_HP_PERCENT = 90;
     private static final Duration MAX_HP_RECOVERY_TIME = Duration.ofMinutes(15);
     private static final Duration HP_CHECK_INTERVAL = Duration.ofSeconds(10);
     private static final int ATTEMPTS_TO_FIND_HP = 6;
 
     private SelenideElement hp = $("#HP");
     private SelenideElement gameover = $("[action=gameover]");
-    private SelenideElement buttonExit = $(".userbattlekick title='Выйти'");
     private SelenideElement battleEnd = $("button.UserBattleEnd");
 
     /**

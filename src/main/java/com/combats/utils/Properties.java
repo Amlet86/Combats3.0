@@ -12,10 +12,13 @@ public class Properties {
     private static String userPassword;
     private static boolean typeOfGame;
     private static boolean pet;
+    private static int endTimeHours;
+    private static int endTimeMinutes;
     private static LocalDateTime endTimeOfTheGame;
-    private static String telegramBotName;
+    private static String telegramOwner;
     private static String telegramBotToken;
-    private static String telegramChatId;
+    private static String telegramProxy;
+    private static volatile String telegramChatId;
 
     /** @return true, если браузер запускается без окна (галочка «Browser off») */
     public static boolean isHeadless() {
@@ -81,10 +84,17 @@ public class Properties {
      * @param minutes минуты, 0–59
      */
     public static void setEndTimeOfTheGame(Object hours, Object minutes) {
-        endTimeOfTheGame = calculateEndTime(
-                Integer.parseInt(hours.toString()),
-                Integer.parseInt(minutes.toString()),
-                LocalDateTime.now());
+        endTimeHours = Integer.parseInt(hours.toString());
+        endTimeMinutes = Integer.parseInt(minutes.toString());
+        recalculateEndTimeOfTheGame();
+    }
+
+    /**
+     * Пересчитывает время окончания от текущего момента. Нужно при повторном запуске игры из Telegram:
+     * время, заданное в форме для прошлой игры, могло уже пройти.
+     */
+    public static void recalculateEndTimeOfTheGame() {
+        endTimeOfTheGame = calculateEndTime(endTimeHours, endTimeMinutes, LocalDateTime.now());
     }
 
     /**
@@ -101,14 +111,24 @@ public class Properties {
         return endTime.isAfter(now) ? endTime : endTime.plusDays(1);
     }
 
-    /** @return имя Telegram-бота */
-    public static String getTelegramBotName() {
-        return telegramBotName;
+    /** @return username владельца в Telegram: только он может управлять ботом */
+    public static String getTelegramOwner() {
+        return telegramOwner;
     }
 
-    /** Задаёт имя Telegram-бота. */
-    public static void setTelegramBotName(String telegramBotName) {
-        Properties.telegramBotName = telegramBotName;
+    /** Задаёт username владельца в Telegram. */
+    public static void setTelegramOwner(String telegramOwner) {
+        Properties.telegramOwner = telegramOwner;
+    }
+
+    /** @return прокси для Telegram, например socks5://127.0.0.1:1080; пусто — без прокси */
+    public static String getTelegramProxy() {
+        return telegramProxy;
+    }
+
+    /** Задаёт прокси для Telegram. */
+    public static void setTelegramProxy(String telegramProxy) {
+        Properties.telegramProxy = telegramProxy;
     }
 
     /** @return токен Telegram-бота */
@@ -126,7 +146,7 @@ public class Properties {
         return telegramChatId;
     }
 
-    /** Задаёт id чата Telegram, из которого пришла команда. */
+    /** Задаёт id чата владельца в Telegram, куда отправлять уведомления. */
     public static void setTelegramChatId(String telegramChatId) {
         Properties.telegramChatId = telegramChatId;
     }

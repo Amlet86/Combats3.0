@@ -8,11 +8,12 @@ import java.time.format.DateTimeFormatter;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 
+import com.combats.telegram.TelegramService;
 import com.combats.utils.GameControl;
 
 /**
  * Окно статуса на время игры: показывает, чем занят бот, и даёт остановить игру кнопкой «Stop».
- * После окончания игры показывает итог, а кнопка превращается в «Close».
+ * После окончания игры показывает итог, а кнопка превращается в «Exit».
  */
 class StatusWindow extends JFrame {
 
@@ -62,25 +63,29 @@ class StatusWindow extends JFrame {
     }
 
     /**
-     * Показывает итог игры и меняет «Stop» на «Close». Можно вызывать из любого потока.
+     * Показывает итог игры и меняет «Stop» на «Exit». Можно вызывать из любого потока.
+     * Пока окно открыто, программа работает и новую игру можно начать командой /play в Telegram.
      */
     void showResult(String result) {
         SwingUtilities.invokeLater(() -> {
             gameOver = true;
-            statusLabel.setText("<html>" + escapeHtml(result) + "</html>");
+            statusLabel.setText("<html>" + escapeHtml(result)
+                    + "<br>Telegram: send /play to start again.</html>");
             statusLabel.setToolTipText(result);
-            button.setText("Close");
+            button.setText("Exit");
             button.setEnabled(true);
         });
     }
 
     /**
-     * «Stop» (или крестик окна) во время игры просит её остановиться; после игры закрывает окно.
+     * «Stop» (или крестик окна) во время игры просит её остановиться; после игры закрывает программу
+     * вместе с Telegram-ботом.
      */
     private void onButton() {
         if (gameOver) {
             dispose();
-            return;
+            TelegramService.stop();
+            System.exit(0);
         }
         if (!button.isEnabled())
             return;

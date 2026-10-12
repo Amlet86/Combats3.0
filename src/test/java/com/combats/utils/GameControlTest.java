@@ -70,6 +70,53 @@ class GameControlTest {
         } finally {
             GameControl.setStatusListener(status -> { });
         }
+        assertEquals("In battle", GameControl.getLastStatus());
+    }
+
+    @Test
+    void gameIsRunningFromPrepareUntilFinish() {
+        assertFalse(GameControl.isRunning());
+        GameControl.prepare(new Thread(() -> { }));
+        assertTrue(GameControl.isRunning());
+        GameControl.finish();
+        assertFalse(GameControl.isRunning());
+    }
+
+    @Test
+    void taskFromAnotherThreadRunsInGameThreadOnCheckStop() throws InterruptedException {
+        AtomicReference<String> ranIn = new AtomicReference<>();
+        Thread other = new Thread(() -> GameControl.runInGameThread(() -> ranIn.set(Thread.currentThread().getName())));
+        other.start();
+        other.join();
+        assertNull(ranIn.get(), "the task must wait for the game thread");
+
+        GameControl.checkStop();
+
+        assertEquals(Thread.currentThread().getName(), ranIn.get());
+    }
+
+    @Test
+    void failedTaskDoesNotStopTheGame() {
+        AtomicReference<Boolean> secondRan = new AtomicReference<>(false);
+        GameControl.runInGameThread(() -> {
+            throw new IllegalStateException("screenshot failed");
+        });
+        GameControl.runInGameThread(() -> secondRan.set(true));
+
+        assertDoesNotThrow(GameControl::checkStop);
+        assertTrue(secondRan.get());
+    }
+
+    @Test
+    void pendingTasksAreDroppedWhenTheGameIsOver() {
+        AtomicReference<Boolean> ran = new AtomicReference<>(false);
+        GameControl.prepare(new Thread(() -> { }));
+        GameControl.runInGameThread(() -> ran.set(true));
+
+        GameControl.finish();
+        GameControl.checkStop();
+
+        assertFalse(ran.get());
     }
 
 }

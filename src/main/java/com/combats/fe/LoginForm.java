@@ -1,42 +1,34 @@
 package com.combats.fe;
 
-import com.combats.be.TopLevelLogic;
-import com.combats.telegram.Bot;
-import com.combats.utils.FileWorker;
-import com.combats.utils.GameControl;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.combats.telegram.TelegramService;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.util.Objects;
 
-import static com.combats.telegram.InitializerTelegramBot.startTelegramBot;
 import static com.combats.utils.Properties.*;
 import static com.combats.utils.Utils.getListHours;
 import static com.combats.utils.Utils.getListMinutes;
 import static javax.swing.SwingConstants.CENTER;
 
 /**
- * Форма настроек бота: логин и пароль, режим игры, время окончания, данные Telegram-бота.
- * Поля логина, пароля и Telegram заполняются из файла, сохранённого при прошлом успешном входе.
+ * Форма настроек бота: логин и пароль, режим игры, время окончания, настройки Telegram-бота.
+ * Поля логина, пароля и Telegram заполняются из файла, сохранённого при прошлом успешном входе
+ * (его читает {@link com.combats.Start} при запуске программы).
  */
 public class LoginForm extends JFrame {
 
-    private static final Logger log = LoggerFactory.getLogger(LoginForm.class);
+    private JTextField loginField = new JTextField(getUserLogin(), 20);
+    private JPasswordField passwordField = new JPasswordField(getUserPassword(), 20);
 
-    public static Bot bot;
-
-    private String[] loginAndPassword = FileWorker.readUserDataFile();
-    private JTextField loginField = new JTextField(loginAndPassword[0], 20);
-    private JPasswordField passwordField = new JPasswordField(loginAndPassword[1], 20);
-
-    private String[] telegramBotNameAndToken = FileWorker.readUserDataFile();
-    private JTextField telegramBotNameField = new JTextField(telegramBotNameAndToken[2], 30);
-    private JTextField telegramBotTokenField = new JTextField(telegramBotNameAndToken[3], 30);
+    private JTextField telegramOwnerField = new JTextField(getTelegramOwner(), 30);
+    private JTextField telegramBotTokenField = new JTextField(getTelegramBotToken(), 30);
+    private JTextField telegramProxyField = new JTextField(getTelegramProxy(), 30);
 
     private JRadioButton pvpRadio = new JRadioButton("PvP");
 
@@ -47,8 +39,8 @@ public class LoginForm extends JFrame {
     private JComboBox endTimeMinutes = new JComboBox(getListMinutes());
 
     /**
-     * Собирает форму. Кнопка «Telegram» раскрывает поля бота, кнопка «Start» (или Enter)
-     * закрывает форму и запускает игру.
+     * Собирает форму. Кнопка «Telegram» раскрывает поля бота, кнопка «Start» (или Enter, или /play
+     * в Telegram) закрывает форму и запускает игру.
      */
     public LoginForm() {
         super("CombatsBot");
@@ -107,19 +99,17 @@ public class LoginForm extends JFrame {
         JLabel telegramLabel = new JLabel("Telegram");
         telegramLabel.setHorizontalAlignment(CENTER);
 
-        Box botNameBox = Box.createHorizontalBox();
-        JLabel botNameLabel = new JLabel("Name:");
-        botNameBox.add(botNameLabel);
-        botNameBox.add(Box.createHorizontalStrut(6));
-        botNameBox.add(telegramBotNameField);
-
-        Box botTokenBox = Box.createHorizontalBox();
+        JLabel ownerLabel = new JLabel("Owner:");
         JLabel botTokenLabel = new JLabel("Token:");
-        botTokenBox.add(botTokenLabel);
-        botTokenBox.add(Box.createHorizontalStrut(6));
-        botTokenBox.add(telegramBotTokenField);
-
-        botNameLabel.setPreferredSize(botTokenLabel.getPreferredSize());
+        JLabel proxyLabel = new JLabel("Proxy:");
+        telegramOwnerField.setToolTipText("Your Telegram username: only this user can control the bot");
+        telegramBotTokenField.setToolTipText("Bot token from @BotFather");
+        telegramProxyField.setToolTipText("For example socks5://127.0.0.1:1080 or http://127.0.0.1:8080; empty — no proxy");
+        Box ownerBox = telegramFieldBox(ownerLabel, telegramOwnerField);
+        Box botTokenBox = telegramFieldBox(botTokenLabel, telegramBotTokenField);
+        Box proxyBox = telegramFieldBox(proxyLabel, telegramProxyField);
+        ownerLabel.setPreferredSize(botTokenLabel.getPreferredSize());
+        proxyLabel.setPreferredSize(botTokenLabel.getPreferredSize());
 
         Box mainBox = Box.createVerticalBox();
         mainBox.setBorder(new EmptyBorder(12, 12, 12, 12));
@@ -143,9 +133,11 @@ public class LoginForm extends JFrame {
                 mainBox.add(Box.createVerticalStrut(10));
                 mainBox.add(telegramLabel, BorderLayout.CENTER);
                 mainBox.add(Box.createVerticalStrut(10));
-                mainBox.add(botNameBox);
+                mainBox.add(ownerBox);
                 mainBox.add(Box.createVerticalStrut(10));
                 mainBox.add(botTokenBox);
+                mainBox.add(Box.createVerticalStrut(10));
+                mainBox.add(proxyBox);
                 pack();
             }
         });
@@ -153,16 +145,33 @@ public class LoginForm extends JFrame {
         this.getRootPane().setDefaultButton(startButton);
 
         startButton.addActionListener(new ButtonStartListener());
-        startButton.addActionListener(e -> this.dispose());
+
+        // /play в Telegram, пока форма открыта, нажимает «Start», чтобы игра шла с настройками из формы
+        GameLauncher.setFormStart(startButton::doClick);
+        addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosed(WindowEvent e) {
+                GameLauncher.setFormStart(null);
+            }
+        });
+    }
+
+    private static Box telegramFieldBox(JLabel label, JTextField field) {
+        Box box = Box.createHorizontalBox();
+        box.add(label);
+        box.add(Box.createHorizontalStrut(6));
+        box.add(field);
+        return box;
     }
 
     /**
-     * Обработчик кнопки «Start»: сохраняет настройки из формы и запускает игру в отдельном потоке.
+     * Обработчик кнопки «Start»: сохраняет настройки из формы, (пере)запускает Telegram-бота,
+     * закрывает форму и запускает игру.
      */
     class ButtonStartListener implements ActionListener {
 
         /**
-         * Переносит значения формы в {@link com.combats.utils.Properties} и запускает поток игры.
+         * Переносит значения формы в {@link com.combats.utils.Properties} и запускает игру.
          */
         public void actionPerformed(ActionEvent e) {
             setUserLogin(loginField.getText());
@@ -174,34 +183,15 @@ public class LoginForm extends JFrame {
 
             setEndTimeOfTheGame(Objects.requireNonNull(endTimeHours.getSelectedItem()), Objects.requireNonNull(endTimeMinutes.getSelectedItem()));
 
-            setTelegramBotName(telegramBotNameField.getText());
+            setTelegramOwner(telegramOwnerField.getText());
             setTelegramBotToken(telegramBotTokenField.getText());
+            setTelegramProxy(telegramProxyField.getText());
+            TelegramService.startInBackground(GameLauncher::playFromTelegram);
 
-            StatusWindow statusWindow = new StatusWindow();
-            Thread gameThread = new Thread(() -> playGame(statusWindow), "game");
-            GameControl.prepare(gameThread);
-            GameControl.setStatusListener(statusWindow::showStatus);
-            statusWindow.setVisible(true);
-            gameThread.start();
+            GameLauncher.setFormStart(null);
+            dispose();
+            GameLauncher.start();
         }
-    }
-
-    /**
-     * Играет вне потока Swing, потому что игра длится часами и не должна блокировать интерфейс.
-     * Поток не демонический, поэтому JVM продолжает работать после закрытия формы.
-     * По окончании показывает итог игры в окне статуса.
-     */
-    private static void playGame(StatusWindow statusWindow) {
-        String result;
-        try {
-            result = new TopLevelLogic().game();
-        } catch (Error | RuntimeException e) {
-            log.error("The game was stopped by an error", e);
-            result = "The game was stopped by an error: " + e;
-        }
-        log.info(result);
-        statusWindow.showResult(result);
     }
 
 }
-

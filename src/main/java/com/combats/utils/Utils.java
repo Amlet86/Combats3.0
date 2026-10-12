@@ -1,7 +1,10 @@
 package com.combats.utils;
 
 import com.codeborne.selenide.SelenideElement;
+import com.codeborne.selenide.WebDriverRunner;
 import com.combats.exception.GameTimeIsOverException;
+import org.openqa.selenium.OutputType;
+import org.openqa.selenium.TakesScreenshot;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,6 +56,22 @@ public class Utils {
         GameControl.checkStop();
         if (!hasGameTime())
             throw new GameTimeIsOverException();
+    }
+
+    /**
+     * Снимает скриншот окна браузера. Вызывать только из потока игры: Selenide привязывает браузер к нему.
+     *
+     * @return картинка PNG или null, если браузер не запущен или скриншот не получился
+     */
+    public static byte[] takeScreenshot() {
+        if (!WebDriverRunner.hasWebDriverStarted())
+            return null;
+        try {
+            return ((TakesScreenshot) WebDriverRunner.getWebDriver()).getScreenshotAs(OutputType.BYTES);
+        } catch (RuntimeException e) {
+            log.warn("Can't take a screenshot", e);
+            return null;
+        }
     }
 
     /**
