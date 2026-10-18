@@ -5,8 +5,6 @@ import java.time.Instant;
 
 import com.codeborne.selenide.ElementsCollection;
 import com.codeborne.selenide.SelenideElement;
-import com.codeborne.selenide.ex.UIAssertionError;
-import com.combats.utils.Notifications;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,20 +30,36 @@ public class BattlePage extends BasePage {
     /** Сообщение после смерти персонажа, пока остальные ещё дерутся. */
     private static final String DEAD_MESSAGE = "Для вас бой окончен";
     private static final Duration EXIT_CONFIRM_TIMEOUT = Duration.ofSeconds(10);
+    /** Сколько ждать окна подтверждения после приёма: обычно его нет, поэтому недолго. */
+    private static final Duration METHOD_CONFIRM_TIMEOUT = Duration.ofSeconds(2);
+    private static final long CONFIRM_CHECK_INTERVAL_MS = 300;
     private static final Duration LEAVE_BATTLE_TIMEOUT = Duration.ofMinutes(3);
+    private static final int MAX_CHOOSE_ATTEMPTS = 3;
+    private static final String ATTACK_RADIOS = ".UserBattleAttack button.UserBattleRadio";
+    private static final String DEFEND_RADIOS = ".UserBattleDefend button.UserBattleRadio";
     /** Сколько проверок подряд не должно быть ни «Обновить», ни «Вернуться», чтобы считать, что мы вышли. */
     private static final int CHECKS_WITHOUT_BUTTONS_TO_LEAVE = 2;
+    /**
+     * Действие с питомцем: {@code pet_unleash} — «Выпустить зверя» (зверь даёт бонус и получает опыт),
+     * {@code pet_train} — «Обучить зверя».
+     */
+    static final String PET_ACTION = "pet_unleash";
+    /** Доступная кнопка действия с питомцем. */
+    static final String PET_METHOD = ".UserBattleResources button.UserBattleMethod:has(img[src*='/" + PET_ACTION + ".'])";
+    /** Доступный приём персонажа, не питомца. */
+    static final String OWN_METHOD = ".UserBattleResources button.UserBattleMethod:not(:has(img[src*='/pet_']))";
 
     private SelenideElement commitBtn = $("[action=commit]");
     private SelenideElement refreshBtn = $("[action=refresh]");
     private SelenideElement returnBtn = $("[action=gameover]");
     private SelenideElement exitBtn = $("[action=exit]");
-    /** «ОК» в окне «Выход из боя». */
-    private ElementsCollection exitConfirmOkBtns = $$("table.WindowNeitral button.WindowOk");
-    private ElementsCollection anyBattleMethods = $$(".UserBattleResources button");
-    private ElementsCollection activeBattleMethods = $$(".UserBattleMethod");
-    private ElementsCollection attackRadios = $$(".UserBattleAttack button.UserBattleRadio");
-    private ElementsCollection defendRadios = $$(".UserBattleDefend button.UserBattleRadio");
+    /**
+     * «ОК» в окне подтверждения внутри страницы: «Выход из боя» и такое же окно, которое иногда
+     * появляется после приёма. Закрытое окно остаётся в DOM скрытым, поэтому нужна видимая кнопка.
+     */
+    private ElementsCollection confirmOkBtns = $$("table.WindowNeitral button.WindowOk");
+    private ElementsCollection attackRadios = $$(ATTACK_RADIOS);
+    private ElementsCollection defendRadios = $$(DEFEND_RADIOS);
     private SelenideElement text = $("td.UserBattleError");
 
     public BattlePage() {
@@ -65,11 +79,8 @@ public class BattlePage extends BasePage {
         while (!returnBtn.isDisplayed()) {
             // время окончания игры бой не прерывает, а «Stop» прерывает: это явное решение пользователя
             checkStop();
-            if (commitBtn.isDisplayed()) {
-                clickBattleMethods();
-                clickAttack();
-                clickDefend();
-            }
+            if (commitBtn.isDisplayed())
+                makeMove();
             if (exitAfterDeath())
                 break;
             if (commitBtn.isDisplayed() || refreshBtn.isDisplayed())
@@ -78,8 +89,10 @@ public class BattlePage extends BasePage {
                 log.warn("The battle screen has disappeared, stop waiting for the end of the battle");
                 break;
             }
-            body.pressEnter();
-            waitAboutSomeSeconds(4);
+            // ход делаем кликом по «Вперёд», Enter нужен только чтобы подтолкнуть обновление, пока ждём противника
+            if (!commitBtn.isDisplayed())
+                body.pressEnter();
+            waitAboutSomeSeconds(commitBtn.isDisplayed() ? 1 : 3);
         }
         getMessage();
         leaveBattle();
@@ -98,15 +111,31 @@ public class BattlePage extends BasePage {
         log.info("The character is dead, leave the battle without waiting for the others");
         status("Dead, leaving the battle");
         humanClick(exitBtn);
-        try {
-            // после закрытия окно остаётся в DOM скрытым, поэтому ищем видимую кнопку
-            SelenideElement ok = exitConfirmOkBtns.findBy(visible).shouldBe(visible, EXIT_CONFIRM_TIMEOUT);
-            humanClick(ok);
+        if (confirmWindowIfShown(EXIT_CONFIRM_TIMEOUT))
             return true;
-        } catch (UIAssertionError e) {
-            // окна не было: если «Выйти» ещё видна, на следующем шаге цикла попробуем снова
-            log.warn("The exit confirmation window hasn't appeared");
-            return false;
+        // окна не было: если «Выйти» ещё видна, на следующем шаге цикла попробуем снова
+        log.warn("The exit confirmation window hasn't appeared");
+        return false;
+    }
+
+    /**
+     * Если на странице появилось окно подтверждения, нажимает в нём «ОК». Ждёт окно не дольше
+     * timeout и не бросает исключение, если его нет: проверка через shouldBe при неудаче
+     * сохраняла бы скриншот в fails/.
+     *
+     * @return true, если окно было и «ОК» нажата
+     */
+    private boolean confirmWindowIfShown(Duration timeout) {
+        Instant deadline = Instant.now().plus(timeout);
+        while (true) {
+            SelenideElement ok = confirmOkBtns.findBy(visible);
+            if (ok.isDisplayed()) {
+                humanClick(ok);
+                return true;
+            }
+            if (Instant.now().isAfter(deadline))
+                return false;
+            sleep(CONFIRM_CHECK_INTERVAL_MS);
         }
     }
 
@@ -138,20 +167,77 @@ public class BattlePage extends BasePage {
     }
 
     /**
-     * Использует первый доступный приём (с питомцем или без).
+     * Если включён питомец, сначала применяет действие с ним, затем первый доступный обычный приём.
+     * Приёмы питомца без галочки «Pet» не трогаем. Некоторые приёмы игра просит подтвердить
+     * в окне, как при выходе из боя: такое окно подтверждаем.
      */
     private void clickBattleMethods() {
-        if ($(".UserBattleMethod").isDisplayed()) {
-            if (getPet())
-                activeBattleMethods.get(0).click();
-            else {
-                if (anyBattleMethods.size() != 12 && activeBattleMethods.get(0).isDisplayed())
-                    activeBattleMethods.get(0).click();
-                else if (!activeBattleMethods.get(0).equals(anyBattleMethods.get(11)) && activeBattleMethods.get(0).isDisplayed())
-                    activeBattleMethods.get(0).click();
-            }
+        if (getPet())
+            usePet();
+        SelenideElement method = $(OWN_METHOD);
+        if (method.isDisplayed()) {
+            method.click();
+            if (confirmWindowIfShown(METHOD_CONFIRM_TIMEOUT))
+                log.info("The method was confirmed in the window");
         }
         waitAboutSomeSeconds(1);
+    }
+
+    /**
+     * Действие с питомцем: кнопка с иконкой {@link #PET_ACTION} рядом с восемью слотами приёмов.
+     * Окна подтверждения нет. После клика обе кнопки питомца («Выпустить» и «Обучить») становятся
+     * недоступными до конца боя, поэтому за бой оно срабатывает один раз (снято 14.10.2026).
+     */
+    private void usePet() {
+        SelenideElement petBtn = $(PET_METHOD);
+        if (!petBtn.isDisplayed())
+            return;
+        humanClick(petBtn);
+        confirmWindowIfShown(METHOD_CONFIRM_TIMEOUT);
+        log.info("Pet action «{}» is used", PET_ACTION);
+        waitAboutSomeSeconds(1);
+    }
+
+    /**
+     * Один ход: приём, удары и блок, затем клик по «Вперёд». Приём может перерисовать зоны
+     * и сбросить выбор, поэтому выбор проверяем и при необходимости повторяем. Что «Вперёд» пропала
+     * после клика, не проверяем: в бою с несколькими противниками игра сразу даёт ход против
+     * следующего, и кнопка остаётся. Если она видна, цикл боя просто сделает следующий ход.
+     */
+    private void makeMove() {
+        clickBattleMethods();
+        // выбор с прошлого хода может остаться, поэтому первый раз выбираем всегда
+        for (int attempt = 1; attempt <= MAX_CHOOSE_ATTEMPTS; attempt++) {
+            clickAttack();
+            clickDefend();
+            if (zonesChosen())
+                break;
+            log.warn("Zones aren't chosen after attempt {}", attempt);
+        }
+        if (!zonesChosen())
+            log.warn("Zones still aren't chosen, press «Вперёд» anyway");
+        if (!commitBtn.isDisplayed())
+            return;
+        commitBtn.click();
+    }
+
+    /**
+     * Выбраны ли все удары и блок. У выбранной кнопки картинка внутри сдвинута: {@code img.Absolute}
+     * со {@code style.left = -18px}.
+     */
+    private boolean zonesChosen() {
+        int strikes = attackRadios.size() / ZONES;
+        return strikes > 0
+            && countChosen(ATTACK_RADIOS) == strikes
+            && countChosen(DEFEND_RADIOS) == 1;
+    }
+
+    private static long countChosen(String radiosSelector) {
+        Long chosen = executeJavaScript(
+            "return [...document.querySelectorAll(arguments[0])]"
+                + ".filter(b => { const i = b.querySelector('img.Absolute'); return i && i.style.left === '-18px'; })"
+                + ".length;", radiosSelector);
+        return chosen == null ? 0 : chosen;
     }
 
     /**
@@ -182,14 +268,13 @@ public class BattlePage extends BasePage {
     }
 
     /**
-     * Сообщает итог боя в окно статуса и в уведомления (Telegram).
+     * Показывает в окне статуса сообщение с экрана боя. В уведомления его не отправляем: после
+     * смерти там «Для вас бой окончен…», а не итог. Итог бой пишет в чат, его отправляет
+     * {@link ChatPage#reportNewBattleResults()}.
      */
     private void getMessage() {
-        if (text.isDisplayed()) {
-            String message = text.getText();
-            status("Battle is over: " + message);
-            Notifications.message("Battle is over: " + message);
-        }
+        if (text.isDisplayed())
+            status("Battle is over: " + text.getText());
     }
 
 }

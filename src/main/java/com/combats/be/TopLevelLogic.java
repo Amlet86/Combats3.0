@@ -1,5 +1,6 @@
 package com.combats.be;
 
+import com.combats.pages.ChatPage;
 import com.combats.pages.CityPage;
 import com.combats.exception.GameStoppedException;
 import com.combats.exception.GameTimeIsOverException;
@@ -44,13 +45,19 @@ public class TopLevelLogic extends BaseLevelLogic {
 
     /**
      * Один круг игры: бой в выбранном режиме. После PvP-боя бот ждёт восстановления HP.
+     * До и после боя отправляет итоги боёв из чата: после смерти итог появляется позже, когда
+     * бой закончится у всех.
      */
     private void actionsInGame() {
+        ChatPage.reportNewBattleResults();
         if (getTypeOfGame()) {
             PvP();
+            ChatPage.reportNewBattleResults();
             new CityPage().waitForHpRecovery();
-        } else
+        } else {
             PvE();
+            ChatPage.reportNewBattleResults();
+        }
     }
 
     /**
@@ -72,6 +79,7 @@ public class TopLevelLogic extends BaseLevelLogic {
             configurationBrowser();
             startBrowser();
             status("Logging in");
+            ChatPage.reset();
             if (!loginInGame())
                 return "Login failed: check login and password.";
             prepareRoadFile();

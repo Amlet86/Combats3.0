@@ -51,6 +51,8 @@ public class CityPage extends BasePage {
             int attemptsToFindHp = 0;
             while (Instant.now().isBefore(deadline)) {
                 checkGameCanContinue();
+                // пока ждём, может закончиться бой, из которого бот вышел после смерти
+                ChatPage.reportNewBattleResults();
                 Integer hpPercent = hp.isDisplayed() ? parseHpPercent(hp.getText()) : null;
                 status(hpPercent == null ? "Waiting for HP recovery" : "Waiting for HP recovery: " + hpPercent + "%");
                 if (hpPercent == null) {

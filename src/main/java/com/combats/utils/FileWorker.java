@@ -15,8 +15,9 @@ import org.slf4j.LoggerFactory;
  * Сохраняет и читает данные пользователя, чтобы форма заполнялась сама, а Telegram-бот
  * запускался вместе с программой. Файл лежит вне проекта: ~/.combats/user-data.txt.
  * <p>
- * Строки файла: логин, пароль, владелец в Telegram, токен бота, прокси для Telegram, id чата владельца.
- * Старый файл из 4 строк хранил в третьей строке имя бота, его при чтении пропускаем.
+ * Строки файла: логин, пароль, владелец в Telegram, токен бота, id чата владельца.
+ * Старые форматы при чтении понимаем: файл из 4 строк хранил в третьей строке имя бота, а файл
+ * из 6 строк (до 18.10.2026) — в пятой строке прокси для Telegram. Обе строки пропускаем.
  */
 public class FileWorker {
 
@@ -26,6 +27,8 @@ public class FileWorker {
             Paths.get(System.getProperty("user.home"), ".combats", "user-data.txt");
 
     private static final int OLD_FORMAT_LINES = 4;
+    private static final int FORMAT_WITH_PROXY_LINES = 6;
+    private static final int PROXY_LINE = 4;
 
     /**
      * Записывает текущие настройки пользователя в файл, создавая папку при необходимости.
@@ -49,7 +52,6 @@ public class FileWorker {
                 nullToEmpty(Properties.getUserPassword()),
                 nullToEmpty(Properties.getTelegramOwner()),
                 nullToEmpty(Properties.getTelegramBotToken()),
-                nullToEmpty(Properties.getTelegramProxy()),
                 nullToEmpty(Properties.getTelegramChatId()));
         try {
             Files.createDirectories(file.getParent());
@@ -71,12 +73,13 @@ public class FileWorker {
         }
         if (lines.size() == OLD_FORMAT_LINES)
             lines.set(2, "");
+        if (lines.size() == FORMAT_WITH_PROXY_LINES)
+            lines.remove(PROXY_LINE);
         Properties.setUserLogin(line(lines, 0));
         Properties.setUserPassword(line(lines, 1));
         Properties.setTelegramOwner(line(lines, 2));
         Properties.setTelegramBotToken(line(lines, 3));
-        Properties.setTelegramProxy(line(lines, 4));
-        Properties.setTelegramChatId(line(lines, 5));
+        Properties.setTelegramChatId(line(lines, 4));
     }
 
     /**

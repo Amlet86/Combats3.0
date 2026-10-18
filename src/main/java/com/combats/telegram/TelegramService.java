@@ -1,12 +1,10 @@
 package com.combats.telegram;
 
-import java.net.Proxy;
 import java.util.function.Supplier;
 
 import com.combats.utils.Notifications;
 import com.combats.utils.Properties;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import okhttp3.Authenticator;
 import okhttp3.OkHttpClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,7 +16,7 @@ import org.telegram.telegrambots.meta.api.objects.User;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 
 /**
- * Запуск и остановка Telegram-бота по настройкам из {@link Properties}: токен, владелец, прокси.
+ * Запуск и остановка Telegram-бота по настройкам из {@link Properties}: токен и владелец.
  * Бот работает, пока открыта программа, и между играми тоже, чтобы новую игру можно было начать
  * командой /play.
  */
@@ -35,7 +33,8 @@ public final class TelegramService {
     /**
      * Запускает бота в фоновом потоке, чтобы не задерживать окно программы. Если бот уже работает
      * с теми же настройками, ничего не делает; если настройки изменились, перезапускает его.
-     * Без токена бот не запускается.
+     * Если владелец или токен не заданы, Telegram выключен: бот не запускается (а запущенный
+     * останавливается), уведомления только пишутся в лог.
      *
      * @param play запуск игры по команде /play; возвращает ответ для пользователя
      */
@@ -48,19 +47,16 @@ public final class TelegramService {
     private static synchronized void start(Supplier<String> play) {
         String token = trimToNull(Properties.getTelegramBotToken());
         String owner = trimToNull(Properties.getTelegramOwner());
-        String proxyText = trimToNull(Properties.getTelegramProxy());
-        String settings = token + "\n" + owner + "\n" + proxyText;
+        String settings = token + "\n" + owner;
         if (settings.equals(runningSettings))
             return;
         stop();
-        if (token == null) {
-            log.info("Telegram bot token isn't set, Telegram is off");
+        if (!isEnabled(token, owner)) {
+            log.info("Telegram owner or token isn't set, Telegram is off");
             return;
         }
-        if (owner == null)
-            log.warn("Telegram owner isn't set: the bot will refuse all commands");
         try {
-            OkHttpClient httpClient = httpClient(TelegramProxy.parse(proxyText));
+            OkHttpClient httpClient = new TelegramOkHttpClientFactory.DefaultOkHttpClientCreator().get();
             TelegramClient client = new OkHttpTelegramClient(httpClient, token);
             User me = client.execute(new GetMe());
             TelegramBot bot = new TelegramBot(client, owner, play);
@@ -74,7 +70,7 @@ public final class TelegramService {
             log.info("Telegram bot @{} is started", me.getUserName());
             Notifications.message("CombatsBot is online. Send " + Command.HELP.text + " for the list of commands.");
         } catch (Exception e) {
-            log.error("Can't start Telegram bot: check the token and the proxy", e);
+            log.error("Can't start Telegram bot: check the token", e);
         }
     }
 
@@ -95,14 +91,11 @@ public final class TelegramService {
     }
 
     /**
-     * HTTP-клиент с настройками библиотеки и прокси только для Telegram.
+     * Telegram включён, только когда заданы и владелец, и токен: без владельца бот отказывал бы
+     * во всех командах, без токена не может подключиться.
      */
-    private static OkHttpClient httpClient(Proxy proxy) {
-        return switch (proxy.type()) {
-            case DIRECT -> new TelegramOkHttpClientFactory.DefaultOkHttpClientCreator().get();
-            case SOCKS -> new TelegramOkHttpClientFactory.SocksProxyOkHttpClientCreator(() -> proxy).get();
-            case HTTP -> new TelegramOkHttpClientFactory.HttpProxyOkHttpClientCreator(() -> proxy, () -> Authenticator.NONE).get();
-        };
+    static boolean isEnabled(String token, String owner) {
+        return trimToNull(token) != null && trimToNull(owner) != null;
     }
 
     private static String trimToNull(String value) {

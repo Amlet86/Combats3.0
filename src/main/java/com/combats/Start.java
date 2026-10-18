@@ -1,6 +1,9 @@
 package com.combats;
 
+import javax.swing.SwingUtilities;
+
 import com.combats.fe.GameLauncher;
+import com.formdev.flatlaf.FlatLightLaf;
 import com.combats.fe.LoginForm;
 import com.combats.telegram.TelegramService;
 import com.combats.utils.FileWorker;
@@ -22,8 +25,9 @@ public class Start {
     public static void main(String[] args) {
         FileWorker.readUserDataFile();
         TelegramService.startInBackground(GameLauncher::playFromTelegram);
-        LoginForm loginForm = new LoginForm();
-        loginForm.setVisible(true);
+        // современный вид для всех окон программы (форма, окно статуса)
+        FlatLightLaf.setup();
+        SwingUtilities.invokeLater(() -> new LoginForm().setVisible(true));
     }
 
 }

@@ -17,7 +17,6 @@ public class Properties {
     private static LocalDateTime endTimeOfTheGame;
     private static String telegramOwner;
     private static String telegramBotToken;
-    private static String telegramProxy;
     private static volatile String telegramChatId;
 
     /** @return true, если браузер запускается без окна (галочка «Browser off») */
@@ -119,16 +118,6 @@ public class Properties {
     /** Задаёт username владельца в Telegram. */
     public static void setTelegramOwner(String telegramOwner) {
         Properties.telegramOwner = telegramOwner;
-    }
-
-    /** @return прокси для Telegram, например socks5://127.0.0.1:1080; пусто — без прокси */
-    public static String getTelegramProxy() {
-        return telegramProxy;
-    }
-
-    /** Задаёт прокси для Telegram. */
-    public static void setTelegramProxy(String telegramProxy) {
-        Properties.telegramProxy = telegramProxy;
     }
 
     /** @return токен Telegram-бота */

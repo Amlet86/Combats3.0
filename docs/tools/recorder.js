@@ -51,9 +51,45 @@
     });
   };
   const mainFrame = () => [...document.querySelectorAll('iframe')].find(f => f.getAttribute('onload'));
+  // журнал кликов пользователя: что нажато, в каком документе и какие кнопки боя были видны
+  const CLICKS = '__combatsClicks';
+  const describeOne = e => {
+    let d = e.tagName.toLowerCase();
+    if (e.id) d += '#' + e.id;
+    if (typeof e.className === 'string' && e.className.trim()) d += '.' + e.className.trim().split(/\s+/).join('.');
+    ['name', 'type', 'value', 'action', 'title', 'alt', 'href', 'src', 'onclick'].forEach(a => {
+      const v = e.getAttribute(a);
+      if (v != null && v !== '') d += ` [${a}=${clean(v).replace(/\d\.\d{6,}/g, '<rnd>').slice(0, 160)}]`;
+    });
+    const t = clean(e.textContent).slice(0, 60);
+    if (t) d += ` "${t}"`;
+    return d;
+  };
+  const logClick = (where, ev) => {
+    try {
+      const path = [];
+      for (let e = ev.target; e && e.tagName && path.length < 4; e = e.parentElement) path.push(describeOne(e));
+      const all = JSON.parse(localStorage.getItem(CLICKS) || '[]');
+      all.push({
+        time: new Date().toISOString(), where, url: (ev.target.ownerDocument.URL || '').replace(/\d\.\d{6,}/g, '<rnd>'),
+        path, battle: [...document.querySelectorAll('button[action]')].filter(shown).map(b => b.getAttribute('action')).join(','),
+        message: clean([...document.querySelectorAll('td.UserBattleError')].map(e => e.innerText).join(' ')).slice(0, 80)
+      });
+      localStorage.setItem(CLICKS, JSON.stringify(all));
+    } catch (e) { console.warn('click log', e); }
+  };
+  const hookClicks = (doc, where) => {
+    if (!doc || doc.__combatsClicksHooked) return;
+    doc.__combatsClicksHooked = true;
+    doc.addEventListener('click', ev => logClick(where, ev), true);
+  };
+  hookClicks(document, 'top');
   let lastMain = '', lastBattle = '';
   const tick = () => {
     try {
+      document.querySelectorAll('iframe').forEach(f => {
+        try { hookClicks(f.contentDocument, f.getAttribute('onload') ? 'main' : (f.name || f.id || 'iframe')); } catch (x) { /* чужой домен */ }
+      });
       const f = mainFrame();
       const d = f && f.contentDocument;
       if (d && d.readyState === 'complete' && d.URL !== lastMain) { lastMain = d.URL; setTimeout(() => snapDoc('frame', f.contentDocument), 700); }
