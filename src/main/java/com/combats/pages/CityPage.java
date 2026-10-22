@@ -8,6 +8,7 @@ import com.codeborne.selenide.SelenideElement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static com.codeborne.selenide.ClickOptions.usingJavaScript;
 import static com.codeborne.selenide.Condition.visible;
 import static com.codeborne.selenide.Selenide.*;
 import static com.combats.utils.GameControl.status;
@@ -127,7 +128,11 @@ public class CityPage extends BasePage {
                 return;
             status("Returning to the Warriors' Hall");
             log.info("Not in the club after the battle, go to «{}»", next.getAttribute("onclick"));
-            humanClick(next);
+            // кликаем через JavaScript, а не мышью: ночью на Центральной грибнице «Башня рыцарей-магов»
+            // лежит поверх «Зала воинов» в тех же координатах, и клик мышью доставался ей
+            // (element click intercepted, 22.10.2026). Игре всё равно: onclick вызывает solo(...)
+            waitAboutSomeSeconds(1);
+            next.click(usingJavaScript());
             // переход бывает с таймером: ждём, пока он закончится, и не жмём его повторно
             waitAboutSomeSeconds(2);
             waitForPendingMove();
