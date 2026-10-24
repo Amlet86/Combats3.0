@@ -1,0 +1,40 @@
+# Filebeat: читает JSON-лог бота (одна строка — один JSON-объект) и отправляет в Elasticsearch.
+# Поля записи описаны в README проекта, раздел «Логи».
+
+filebeat.inputs:
+  - type: filestream
+    id: combats-bot-json
+    # текущий bot.json и файлы прошлых дней bot.ГГГГ-ММ-ДД.json
+    paths:
+      - /logs/bot*.json
+    # файл узнаём по содержимому начала, а не по inode: на томе из Windows inode ненадёжен,
+    # а при смене дня bot.json переименовывается и не должен читаться заново
+    prospector.scanner.fingerprint.enabled: true
+    # по умолчанию отпечаток — первые 1024 байта, и файл меньше этого не читается вовсе;
+    # 128 байт первой записи (время с миллисекундами) хватает, чтобы отличить файлы
+    prospector.scanner.fingerprint.length: 128
+    file_identity.fingerprint: ~
+    parsers:
+      - ndjson:
+          # поля JSON кладём в корень записи, @timestamp и message из лога заменяют свои
+          target: ""
+          overwrite_keys: true
+          add_error_key: true
+
+processors:
+  # номер круга игры в MDC — строка; числом по нему удобнее сортировать и строить графики
+  - convert:
+      fields:
+        - {from: "battle", type: "integer"}
+      ignore_missing: true
+      fail_on_error: false
+  # служебные поля Filebeat, которые для учебного стенда только мешают
+  - drop_fields:
+      fields: ["agent", "ecs", "host", "input", "@version", "level_value"]
+      ignore_missing: true
+
+output.elasticsearch:
+  hosts: ["http://elasticsearch:9200"]
+
+# Kibana-дашборды Filebeat для системных логов не нужны
+setup.dashboards.enabled: false

@@ -4,24 +4,52 @@ import javax.swing.SwingUtilities;
 
 import com.combats.be.TopLevelLogic;
 import com.combats.utils.GameControl;
+import com.combats.utils.LogContext;
 import com.combats.utils.Notifications;
 import com.combats.utils.Properties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Запуск игры из формы (кнопка «Start») и из Telegram (команда /play).
- * Игра идёт в отдельном потоке «game», её ход показывает окно статуса.
+ * Запуск игры из формы (кнопка «Start»), из Telegram (команда /play) и сразу при старте в серверном
+ * режиме. Игра идёт в отдельном потоке «game», её ход показывает окно статуса (на сервере — только лог).
  */
 public final class GameLauncher {
 
     private static final Logger log = LoggerFactory.getLogger(GameLauncher.class);
 
+    /** Сколько ждать, пока игра закроет браузер, когда программу останавливают (systemd stop, Ctrl+C). */
+    private static final long SHUTDOWN_WAIT_MS = 30_000;
+
     /** Нажимает «Start» в форме, пока она открыта; после закрытия формы null. */
     private static volatile Runnable formStart;
     private static volatile StatusWindow statusWindow;
+    /** Работа без окон (параметр --server): окно статуса не создаём, статус пишется только в лог. */
+    private static volatile boolean serverMode;
+    private static volatile Thread gameThread;
 
     private GameLauncher() {
+    }
+
+    /**
+     * Включает работу без окон: для сервера, где нет экрана. Когда программу останавливают
+     * (systemd stop, Ctrl+C), просит игру остановиться и ждёт, пока она закроет браузер,
+     * иначе Chrome остался бы висеть на сервере.
+     */
+    public static void setServerMode() {
+        serverMode = true;
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            Thread thread = gameThread;
+            if (!GameControl.isRunning() || thread == null)
+                return;
+            log.info("The program is being stopped, stop the game and close the browser");
+            GameControl.requestStop();
+            try {
+                thread.join(SHUTDOWN_WAIT_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }, "shutdown"));
     }
 
     /**
@@ -55,14 +83,19 @@ public final class GameLauncher {
     /**
      * Запускает игру с текущими настройками из {@link Properties}. Можно вызывать из любого потока.
      */
-    static synchronized void start() {
+    public static synchronized void start() {
         if (GameControl.isRunning()) {
             log.warn("The game is already running");
             return;
         }
         Thread gameThread = new Thread(GameLauncher::playGame, "game");
+        GameLauncher.gameThread = gameThread;
         // до показа окна, чтобы повторный /play сразу видел, что игра уже идёт
         GameControl.prepare(gameThread);
+        if (serverMode) {
+            gameThread.start();
+            return;
+        }
         SwingUtilities.invokeLater(() -> {
             if (statusWindow != null)
                 statusWindow.dispose();
@@ -79,6 +112,7 @@ public final class GameLauncher {
      * По окончании показывает итог игры в окне статуса и отправляет его в уведомления.
      */
     private static void playGame() {
+        LogContext.startGame(Properties.getUserLogin(), Properties.getTypeOfGame());
         Notifications.message("The game is started: " + (Properties.getTypeOfGame() ? "PvP" : "Dungeon")
                 + (Properties.getEndTimeOfTheGame() == null ? ", no end time"
                 : ", until " + Properties.getEndTimeOfTheGame().toLocalTime()));
@@ -92,7 +126,9 @@ public final class GameLauncher {
         GameControl.finish();
         log.info(result);
         Notifications.message(result + "\nSend /play to start again.");
-        statusWindow.showResult(result);
+        if (statusWindow != null)
+            statusWindow.showResult(result);
+        LogContext.clear();
     }
 
 }

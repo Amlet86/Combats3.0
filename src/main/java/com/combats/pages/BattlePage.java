@@ -110,7 +110,7 @@ public class BattlePage extends BasePage {
             return false;
         log.info("The character is dead, leave the battle without waiting for the others");
         status("Dead, leaving the battle");
-        humanClick(exitBtn);
+        humanJsClick(exitBtn);
         if (confirmWindowIfShown(EXIT_CONFIRM_TIMEOUT))
             return true;
         // окна не было: если «Выйти» ещё видна, на следующем шаге цикла попробуем снова
@@ -122,6 +122,10 @@ public class BattlePage extends BasePage {
      * Если на странице появилось окно подтверждения, нажимает в нём «ОК». Ждёт окно не дольше
      * timeout и не бросает исключение, если его нет: проверка через shouldBe при неудаче
      * сохраняла бы скриншот в fails/.
+     * <p>
+     * «ОК» жмём через JavaScript: окно открывается в центре экрана, там же, где иконки приёмов,
+     * и подсказка приёма под мышью («Рассекающие выстрелы») ложилась поверх окна и перехватывала
+     * клик мышью (24.10.2026, бот остановился после трёх таких ошибок подряд).
      *
      * @return true, если окно было и «ОК» нажата
      */
@@ -130,7 +134,7 @@ public class BattlePage extends BasePage {
         while (true) {
             SelenideElement ok = confirmOkBtns.findBy(visible);
             if (ok.isDisplayed()) {
-                humanClick(ok);
+                humanJsClick(ok);
                 return true;
             }
             if (Instant.now().isAfter(deadline))

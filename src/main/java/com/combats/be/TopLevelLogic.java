@@ -4,6 +4,7 @@ import com.combats.pages.ChatPage;
 import com.combats.pages.CityPage;
 import com.combats.exception.GameStoppedException;
 import com.combats.exception.GameTimeIsOverException;
+import com.combats.utils.LogContext;
 import com.combats.utils.Notifications;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,6 +51,7 @@ public class TopLevelLogic extends BaseLevelLogic {
      */
     private void actionsInGame() {
         ChatPage.reportNewBattleResults();
+        log.info("Battle {} begins", LogContext.nextBattle());
         if (getTypeOfGame()) {
             PvP();
             ChatPage.reportNewBattleResults();

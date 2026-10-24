@@ -3,6 +3,7 @@ package com.combats.pages;
 import com.codeborne.selenide.SelenideElement;
 import org.openqa.selenium.support.FindBy;
 
+import static com.codeborne.selenide.ClickOptions.usingJavaScript;
 import static com.codeborne.selenide.Selenide.*;
 import static com.combats.utils.Utils.waitAboutSomeSeconds;
 
@@ -44,6 +45,19 @@ public class BasePage implements BaseActions {
         waitAboutSomeSeconds(1);
         if (element != null && element.isDisplayed()) {
             element.click();
+        }
+    }
+
+    /**
+     * Как {@link #humanClick}, но клик через JavaScript прямо по элементу, а не мышью по координатам.
+     * Нужен, когда поверх кнопки может лежать другой элемент: подсказка приёма над окном
+     * «Выход из боя», ночная картинка соседнего здания на улице. Обычный клик тогда падает
+     * с «element click intercepted».
+     */
+    void humanJsClick(SelenideElement element) {
+        waitAboutSomeSeconds(1);
+        if (element != null && element.isDisplayed()) {
+            element.click(usingJavaScript());
         }
     }
 

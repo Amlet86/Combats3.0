@@ -30,12 +30,23 @@ public class FileWorker {
     private static final int FORMAT_WITH_PROXY_LINES = 6;
     private static final int PROXY_LINE = 4;
 
+    private static volatile boolean disabled;
+
+    /**
+     * Больше не писать файл: на сервере пароль приходит из окружения и на диске лежать не должен.
+     */
+    public static void disable() {
+        disabled = true;
+    }
+
     /**
      * Записывает текущие настройки пользователя в файл, создавая папку при необходимости.
      * Вызывается из потока игры и из потока Telegram, поэтому synchronized.
+     * После {@link #disable()} ничего не делает.
      */
     public static synchronized void writeUserDataFile() {
-        writeUserDataFile(USER_DATA_FILE_PATH);
+        if (!disabled)
+            writeUserDataFile(USER_DATA_FILE_PATH);
     }
 
     /**

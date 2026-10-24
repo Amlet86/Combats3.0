@@ -94,7 +94,7 @@ public final class TelegramService {
      * Telegram включён, только когда заданы и владелец, и токен: без владельца бот отказывал бы
      * во всех командах, без токена не может подключиться.
      */
-    static boolean isEnabled(String token, String owner) {
+    public static boolean isEnabled(String token, String owner) {
         return trimToNull(token) != null && trimToNull(owner) != null;
     }
 

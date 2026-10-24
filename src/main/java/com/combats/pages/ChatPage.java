@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.combats.utils.Notifications;
@@ -11,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.codeborne.selenide.Selenide.executeJavaScript;
+import static net.logstash.logback.argument.StructuredArguments.kv;
 import static com.combats.utils.GameControl.status;
 
 /**
@@ -27,6 +29,8 @@ public class ChatPage {
 
     /** Итог боя: «21:09 Внимание! Бой закончен. Всего вами нанесено урона: 1800 HP. Получено опыта: …». */
     static final Pattern BATTLE_RESULT = Pattern.compile("^\\d{1,2}:\\d{2} Внимание! Бой закончен\\. Всего вами нанесено урона.*");
+    static final Pattern DAMAGE = Pattern.compile("нанесено урона:\\s*(\\d+)");
+    static final Pattern EXPERIENCE = Pattern.compile("Получено опыта:\\s*(\\d+)");
     /** Текст всех сообщений чата. Выполняется из любого фрейма игры: чат всегда в верхнем документе. */
     private static final String READ_CHAT = "return [...top.document.querySelectorAll('div.Chat')]"
         + ".map(e => e.textContent.replace(/\\s+/g, ' ').trim());";
@@ -57,9 +61,28 @@ public class ChatPage {
         }
         for (String result : results) {
             String message = "Battle is over: " + result.replace("Внимание! ", "");
+            logResult(result);
             status(message);
             Notifications.message(message);
         }
+    }
+
+    /**
+     * Пишет итог боя в лог отдельными полями: в JSON-логе это damage_hp и experience, по ним в Kibana
+     * строятся графики урона и опыта.
+     */
+    private static void logResult(String result) {
+        Long damage = number(DAMAGE, result);
+        Long experience = number(EXPERIENCE, result);
+        log.info("Battle result: {}, {}", kv("damage_hp", damage), kv("experience", experience));
+    }
+
+    /**
+     * @return первое число из группы 1 шаблона или null, если его в тексте нет
+     */
+    static Long number(Pattern pattern, String text) {
+        Matcher matcher = pattern.matcher(text);
+        return matcher.find() ? Long.valueOf(matcher.group(1)) : null;
     }
 
     /**

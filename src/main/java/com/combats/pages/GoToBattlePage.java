@@ -28,6 +28,12 @@ public class GoToBattlePage extends BasePage {
      */
     private static final int MAX_RETURNS_TO_APPLICATIONS = 5;
 
+    /**
+     * Разброс силы противников для своей заявки: вариант списка «Сила противников», в тексте которого
+     * есть эта строка («±50%»). Выбираем по тексту, потому что значения вариантов (value) не снимали.
+     */
+    static final String OPPONENTS_STRENGTH = "50%";
+
     /** Заявка: (участники) (уровни) Бой начнется через N мин. — группа 1: участники, группа 2: минуты. */
     private static final Pattern APPLICATION =
             Pattern.compile("\\(([^()]*)\\)\\s*\\(\\d+-\\d+\\)\\s*Бой начн[её]тся через\\s*([\\d.,]+)\\s*мин");
@@ -57,6 +63,10 @@ public class GoToBattlePage extends BasePage {
 
     @FindBy(css = "[name=open]")
     private SelenideElement open;
+
+    /** Список «Сила противников» в форме своей заявки (±25% / ±50%). */
+    @FindBy(css = "select[name=cena2]")
+    private SelenideElement opponentsStrength;
 
     private By goCombat = By.cssSelector("[name=gocombat]");
 
@@ -106,24 +116,82 @@ public class GoToBattlePage extends BasePage {
     /**
      * Один шаг ожидания на странице хаотичных заявок: показывает время до начала боя, вступает
      * в заявку или подаёт свою, нажимает «Обновить» и ждёт.
+     * <p>
+     * После того как бот вступил в заявку или подал свою, шаг заканчивается: страница
+     * перезагружается не сразу, и пока на экране старая, на ней ещё видна ссылка «Подать заявку».
+     * Раньше бот тут же жал её, а к клику страница уже обновлялась, и ссылки не было:
+     * «Element not found {//*[.='Подать заявку на хаотичный бой']}», хотя заявка уже подана.
      */
     private void waitOnApplicationsPage() {
-        String minutes = minutesToStart($("body").getText(), getUserLogin());
+        String pageText = $("body").getText();
+        String minutes = minutesToStart(pageText, getUserLogin());
         status("Waiting for a chaotic battle to start" + (minutes == null ? "" : ": " + minutes + " min left"));
-        if (confirm.isDisplayed()) {
-            int number = chooseRadioWithMinTime();
-            if (number >= 0) {
-                $$(goCombat).get(number).click();
-                humanClick(confirm);
-            }
-        }
-        if (applicationChaos.isDisplayed()) {
-            applicationChaos.click();
-            open.click();
+        // уже стоим в заявке: вступать в другую или подавать свою не нужно
+        if (!isWaitingForOwnBattle(pageText) && (joinApplication() || submitApplication())) {
+            waitAboutSomeSeconds(5);
+            return;
         }
         if (refreshBtn.isDisplayed())
             refreshBtn.click();
         waitAboutSomeSeconds(10);
+    }
+
+    /**
+     * Вступает в чужую заявку с ближайшим стартом.
+     *
+     * @return true, если нажали «Принять участие»
+     */
+    private boolean joinApplication() {
+        if (!confirm.isDisplayed())
+            return false;
+        int number = chooseRadioWithMinTime();
+        if (number < 0)
+            return false;
+        $$(goCombat).get(number).click();
+        humanClick(confirm);
+        log.info("Joined a chaotic battle application");
+        return true;
+    }
+
+    /**
+     * Подаёт свою заявку на хаотичный бой с разбросом силы противников ±50%.
+     * Если такого варианта в списке нет, заявку всё равно подаём, с тем, что выбрано по умолчанию.
+     *
+     * @return true, если нажали «Подать заявку»
+     */
+    private boolean submitApplication() {
+        if (!applicationChaos.isDisplayed())
+            return false;
+        applicationChaos.click();
+        String strength = chooseOpponentsStrength();
+        open.click();
+        log.info("Submitted a chaotic battle application, opponents' strength {}", strength);
+        return true;
+    }
+
+    /**
+     * Выбирает в списке «Сила противников» вариант с {@link #OPPONENTS_STRENGTH}.
+     *
+     * @return текст выбранного варианта (как на странице)
+     */
+    private String chooseOpponentsStrength() {
+        try {
+            opponentsStrength.selectOptionContainingText(OPPONENTS_STRENGTH);
+        } catch (RuntimeException e) {
+            log.warn("Can't choose «{}» in the opponents' strength list, keep the default", OPPONENTS_STRENGTH, e);
+        }
+        try {
+            return opponentsStrength.getSelectedOptionText();
+        } catch (RuntimeException e) {
+            return "unknown";
+        }
+    }
+
+    /**
+     * Персонаж уже в заявке: в шапке страницы «Ожидаем начала группового боя».
+     */
+    static boolean isWaitingForOwnBattle(String pageText) {
+        return pageText != null && pageText.contains("Ожидаем начала");
     }
 
     /**

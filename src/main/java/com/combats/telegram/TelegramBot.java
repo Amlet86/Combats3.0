@@ -146,7 +146,8 @@ class TelegramBot implements LongPollingSingleThreadUpdateConsumer, Notification
             return;
         Properties.setTelegramChatId(chatId);
         FileWorker.writeUserDataFile();
-        log.info("Telegram chat of the owner is saved, notifications will be sent there");
+        // id чата не секрет; на сервере его можно задать в TELEGRAM_CHAT_ID, чтобы не писать боту после перезапуска
+        log.info("Telegram chat of the owner is {}, notifications will be sent there", chatId);
     }
 
     private boolean isOwner(User user) {

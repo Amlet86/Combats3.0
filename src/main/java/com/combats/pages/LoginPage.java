@@ -20,12 +20,14 @@ public class LoginPage extends BasePage {
     private static final Duration LOGIN_TIMEOUT = Duration.ofSeconds(30);
 
     /**
-     * Заполняет логин и пароль и нажимает «Войти».
+     * Заполняет логин и пароль и нажимает «Войти». Кнопку ищем не только по русскому тексту:
+     * сайт выбирает язык по браузеру, и на сервере с английским Chrome кнопка называется
+     * « Sign In » ({@code input[type=submit][name=enter_btn]}, снято 24.10.2026).
      */
     public void login(String login, String password) {
         $("[name=login]").setValue(login);
         $("[name=psw]").setValue(password);
-        $("[value=' Войти ']").click();
+        $("[name=enter_btn], input[value=' Войти ']").click();
     }
 
     /**
