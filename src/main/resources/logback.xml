@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Лог бота: в консоль, в файл ~/.combats/logs/bot.log для чтения глазами и в файл bot.json
+  для Filebeat / Elasticsearch / Kibana (одна строка — один JSON-объект).
+  Каждый день файлы переименовываются в bot.ГГГГ-ММ-ДД.log / .json, хранятся последние 14 дней.
+-->
+<configuration>
+
+    <property name="LOG_DIR" value="${user.home}/.combats/logs"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss} [%thread] %-5level %logger{0} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/bot.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/bot.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>14</maxHistory>
+            <totalSizeCap>200MB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <charset>UTF-8</charset>
+            <!-- в файле полная дата: файлы за разные дни складываются рядом -->
+            <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{0} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!--
+      Поля записи: @timestamp, message, level, logger_name, thread_name, stack_trace,
+      поля игры из MDC (game_id, login, mode, battle — см. com.combats.utils.LogContext),
+      поля событий (damage_hp, experience) и app.
+    -->
+    <appender name="JSON" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/bot.json</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/bot.%d{yyyy-MM-dd}.json</fileNamePattern>
+            <maxHistory>14</maxHistory>
+            <totalSizeCap>300MB</totalSizeCap>
+        </rollingPolicy>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <customFields>{"app":"combats-bot"}</customFields>
+            <!-- время в UTC с миллисекундами: такой @timestamp Filebeat разбирает без настроек, Kibana покажет его по местному времени -->
+            <timeZone>UTC</timeZone>
+            <timestampPattern>yyyy-MM-dd'T'HH:mm:ss.SSS'Z'</timestampPattern>
+            <!-- ошибки Selenide многострочные и длинные: обрезаем стек, чтобы запись оставалась читаемой в Kibana -->
+            <throwableConverter class="net.logstash.logback.stacktrace.ShortenedThrowableConverter">
+                <maxDepthPerThrowable>30</maxDepthPerThrowable>
+                <maxLength>8192</maxLength>
+                <rootCauseFirst>true</rootCauseFirst>
+            </throwableConverter>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
+        <appender-ref ref="JSON"/>
+    </root>
+
+</configuration>
