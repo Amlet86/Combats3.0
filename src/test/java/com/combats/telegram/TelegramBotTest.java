@@ -7,6 +7,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.combats.utils.GameControl;
+import com.combats.utils.GameStats;
 import com.combats.utils.Properties;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -124,6 +125,18 @@ class TelegramBotTest {
 
         assertEquals(sentBefore + 1, sent.size());
         assertEquals("Screenshot (the browser isn't started yet)", lastText());
+    }
+
+    @Test
+    void statsShowBattlesOfTheGame() {
+        GameStats.start();
+        GameStats.battle(3802L, 23364L);
+
+        bot.consume(update("Amlett", OWNER_CHAT, "/stats"));
+
+        assertTrue(lastText().startsWith("The game is running for"), lastText());
+        assertTrue(lastText().contains("Battles: 1"), lastText());
+        assertTrue(lastText().contains("Damage: 3,802 HP"), lastText());
     }
 
     @Test

@@ -15,6 +15,7 @@ class CommandTest {
         assertEquals(Command.STOP, Command.parse("/stop"));
         assertEquals(Command.STATUS, Command.parse("/status"));
         assertEquals(Command.SCREENSHOT, Command.parse("/screenshot"));
+        assertEquals(Command.STATS, Command.parse("/stats"));
         assertEquals(Command.HELP, Command.parse("/help"));
     }
 

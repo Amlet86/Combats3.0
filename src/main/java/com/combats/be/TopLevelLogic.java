@@ -1,7 +1,12 @@
 package com.combats.be;
 
+import java.time.Duration;
+import java.time.Instant;
+
 import com.combats.pages.ChatPage;
 import com.combats.pages.CityPage;
+import com.combats.pages.PageState;
+import com.combats.utils.GameStats;
 import com.combats.exception.GameStoppedException;
 import com.combats.exception.GameTimeIsOverException;
 import com.combats.utils.LogContext;
@@ -17,9 +22,11 @@ import static com.combats.utils.GameControl.status;
 import static com.combats.utils.MapNavigator.prepareRoadFile;
 import static com.combats.utils.Properties.getTypeOfGame;
 import static com.combats.utils.Properties.isHeadless;
+import static com.combats.utils.Utils.checkGameCanContinue;
 import static com.combats.utils.Utils.hasGameTime;
 import static com.combats.utils.Utils.takeScreenshot;
 import static com.combats.utils.Utils.waitAboutSomeSeconds;
+import static com.combats.utils.Utils.waiting;
 
 /**
  * Верхний уровень логики бота: запуск браузера, вход в игру и игровой цикл
@@ -36,6 +43,10 @@ public class TopLevelLogic extends BaseLevelLogic {
     private static final int MAX_ERRORS_IN_A_ROW = 3;
 
     private static final String STOPPED_BY_USER = "The game was stopped by the user.";
+    private static final String GAME_TIME_IS_OVER = "There isn't error, the game's end because timeout.";
+    private static final Duration PAUSE_STEP = Duration.ofSeconds(10);
+
+    private final SiteRecovery recovery = new SiteRecovery(new RecoveryBrowser());
 
     /**
      * Настраивает Selenide перед запуском браузера.
@@ -79,13 +90,17 @@ public class TopLevelLogic extends BaseLevelLogic {
         try {
             status("Starting the browser");
             configurationBrowser();
-            startBrowser();
+            openBasePageSafely();
+            // сайт мог быть недоступен уже при запуске: ждём его, а не падаем на входе
+            recovery.waitIfSiteUnavailable();
             status("Logging in");
             ChatPage.reset();
             if (!loginInGame())
                 return "Login failed: check login and password.";
             prepareRoadFile();
             return playUntilEndTime();
+        } catch (GameTimeIsOverException e) {
+            return GAME_TIME_IS_OVER;
         } catch (Error | RuntimeException e) {
             // «Stop» во время запуска браузера или входа прерывает операции WebDriver с ошибкой
             if (isStopRequested())
@@ -100,17 +115,21 @@ public class TopLevelLogic extends BaseLevelLogic {
 
     /**
      * Игровой цикл до времени окончания игры. После ошибки перезагружает страницу и продолжает,
-     * после {@link #MAX_ERRORS_IN_A_ROW} ошибок подряд останавливается.
+     * после {@link #MAX_ERRORS_IN_A_ROW} ошибок подряд останавливается. Ошибки с внешней причиной
+     * (выкинуло на страницу входа, сайт недоступен, закрылся браузер) не считаются: их устраняет
+     * {@link SiteRecovery}.
      *
      * @return сообщение о том, почему игра закончилась
      */
     private String playUntilEndTime() {
         int errorsInARow = 0;
         while (hasGameTime()) {
+            Throwable error;
             try {
                 checkStop();
                 actionsInGame();
                 errorsInARow = 0;
+                continue;
             } catch (GameTimeIsOverException e) {
                 break;
             } catch (GameStoppedException e) {
@@ -119,19 +138,42 @@ public class TopLevelLogic extends BaseLevelLogic {
                 // после «Stop» операции браузера могут упасть с любой ошибкой, это не сбой игры
                 if (isStopRequested())
                     return STOPPED_BY_USER;
-                errorsInARow++;
-                if (errorsInARow >= MAX_ERRORS_IN_A_ROW) {
-                    log.error("The game was stopped after {} errors in a row", errorsInARow, e);
-                    return "The game was stopped after " + errorsInARow + " errors in a row: " + e.getMessage();
-                }
-                log.warn("Error {} of {}, reload the page and continue", errorsInARow, MAX_ERRORS_IN_A_ROW, e);
-                status("Error " + errorsInARow + " of " + MAX_ERRORS_IN_A_ROW + ", reloading the page");
-                Notifications.photo("Error " + errorsInARow + " of " + MAX_ERRORS_IN_A_ROW + ": "
-                        + firstLine(e.getMessage()), takeScreenshot());
-                reloadPage();
+                error = e;
             }
+            // скриншот до перезагрузки, чтобы в Telegram пришёл экран, на котором случилась ошибка
+            byte[] screenshot = takeScreenshot();
+            SiteRecovery.Result recovered;
+            try {
+                recovered = recovery.recover();
+            } catch (GameTimeIsOverException e) {
+                break;
+            } catch (GameStoppedException e) {
+                return STOPPED_BY_USER;
+            } catch (RuntimeException e) {
+                if (isStopRequested())
+                    return STOPPED_BY_USER;
+                log.warn("Can't recover after the error", e);
+                recovered = SiteRecovery.Result.NOT_EXTERNAL;
+            }
+            if (recovered == SiteRecovery.Result.RECOVERED) {
+                GameStats.recovery();
+                log.info("The error had an external cause, it's fixed, continue: {}", firstLine(error.getMessage()));
+                continue;
+            }
+            if (recovered == SiteRecovery.Result.LOGIN_FAILED)
+                return "The game logged the character out, and the bot can't log in again: check login and password.";
+            errorsInARow++;
+            GameStats.error();
+            if (errorsInARow >= MAX_ERRORS_IN_A_ROW) {
+                log.error("The game was stopped after {} errors in a row", errorsInARow, error);
+                return "The game was stopped after " + errorsInARow + " errors in a row: " + error.getMessage();
+            }
+            log.warn("Error {} of {}, the page is reloaded, continue", errorsInARow, MAX_ERRORS_IN_A_ROW, error);
+            status("Error " + errorsInARow + " of " + MAX_ERRORS_IN_A_ROW + ", the page is reloaded");
+            Notifications.photo("Error " + errorsInARow + " of " + MAX_ERRORS_IN_A_ROW + ": "
+                    + firstLine(error.getMessage()), screenshot);
         }
-        return "There isn't error, the game's end because timeout.";
+        return GAME_TIME_IS_OVER;
     }
 
     /**
@@ -148,13 +190,72 @@ public class TopLevelLogic extends BaseLevelLogic {
      * Перезагружает страницу игры после ошибки. Ошибку самой перезагрузки только пишет в лог:
      * если браузер не отвечает, это покажет следующий круг игры.
      */
-    private void reloadPage() {
+    private static void reloadPage() {
         try {
             switchTo().defaultContent();
             refresh();
             waitAboutSomeSeconds(5);
         } catch (RuntimeException e) {
             log.warn("Can't reload the page", e);
+        }
+    }
+
+    /**
+     * Открывает стартовую страницу игры. Ошибку только пишет в лог: если сайт не ответил,
+     * это покажет проверка {@link PageState}.
+     */
+    private void openBasePageSafely() {
+        try {
+            startBrowser();
+            waitAboutSomeSeconds(2);
+        } catch (RuntimeException e) {
+            log.warn("Can't open the game site", e);
+        }
+    }
+
+    /**
+     * Пауза, которую прерывают «Stop» и время окончания игры: ждём шагами по 10 секунд
+     * и между шагами проверяем, можно ли продолжать.
+     */
+    private static void pause(Duration duration) {
+        Instant end = Instant.now().plus(duration);
+        while (true) {
+            checkGameCanContinue();
+            long millisLeft = Duration.between(Instant.now(), end).toMillis();
+            if (millisLeft <= 0)
+                return;
+            waiting(Math.min(millisLeft, PAUSE_STEP.toMillis()) / 1000.0);
+        }
+    }
+
+    /**
+     * Браузер для {@link SiteRecovery}: те же действия, что и в игре.
+     */
+    private class RecoveryBrowser implements SiteRecovery.Browser {
+
+        @Override
+        public void reload() {
+            reloadPage();
+        }
+
+        @Override
+        public void openBasePage() {
+            openBasePageSafely();
+        }
+
+        @Override
+        public PageState pageState() {
+            return PageState.detect();
+        }
+
+        @Override
+        public boolean login() {
+            return loginInGame();
+        }
+
+        @Override
+        public void pause(Duration duration) {
+            TopLevelLogic.pause(duration);
         }
     }
 

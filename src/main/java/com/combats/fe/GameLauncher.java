@@ -4,6 +4,7 @@ import javax.swing.SwingUtilities;
 
 import com.combats.be.TopLevelLogic;
 import com.combats.utils.GameControl;
+import com.combats.utils.GameStats;
 import com.combats.utils.LogContext;
 import com.combats.utils.Notifications;
 import com.combats.utils.Properties;
@@ -113,6 +114,7 @@ public final class GameLauncher {
      */
     private static void playGame() {
         LogContext.startGame(Properties.getUserLogin(), Properties.getTypeOfGame());
+        GameStats.start();
         Notifications.message("The game is started: " + (Properties.getTypeOfGame() ? "PvP" : "Dungeon")
                 + (Properties.getEndTimeOfTheGame() == null ? ", no end time"
                 : ", until " + Properties.getEndTimeOfTheGame().toLocalTime()));
@@ -124,8 +126,9 @@ public final class GameLauncher {
             result = "The game was stopped by an error: " + e;
         }
         GameControl.finish();
+        GameStats.finish();
         log.info(result);
-        Notifications.message(result + "\nSend /play to start again.");
+        Notifications.message(result + "\n\n" + GameStats.summary() + "\n\nSend /play to start again.");
         if (statusWindow != null)
             statusWindow.showResult(result);
         LogContext.clear();

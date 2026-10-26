@@ -7,6 +7,7 @@ import java.util.function.Supplier;
 
 import com.combats.utils.FileWorker;
 import com.combats.utils.GameControl;
+import com.combats.utils.GameStats;
 import com.combats.utils.Notifications;
 import com.combats.utils.Properties;
 import org.slf4j.Logger;
@@ -44,7 +45,7 @@ class TelegramBot implements LongPollingSingleThreadUpdateConsumer, Notification
 
     private static final ReplyKeyboardMarkup KEYBOARD = ReplyKeyboardMarkup.builder()
             .keyboardRow(new KeyboardRow(Command.PLAY.text, Command.STOP.text))
-            .keyboardRow(new KeyboardRow(Command.STATUS.text, Command.SCREENSHOT.text))
+            .keyboardRow(new KeyboardRow(Command.STATUS.text, Command.STATS.text, Command.SCREENSHOT.text))
             .resizeKeyboard(true)
             .build();
 
@@ -121,6 +122,8 @@ class TelegramBot implements LongPollingSingleThreadUpdateConsumer, Notification
                 GameControl.runInGameThread(this::sendScreenshot);
                 yield "Taking a screenshot...";
             }
+            // после игры показывает её итог, пока не начнётся следующая
+            case STATS -> GameStats.summary();
             case HELP -> Command.helpText();
         };
     }

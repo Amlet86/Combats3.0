@@ -7,6 +7,7 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import com.combats.utils.GameStats;
 import com.combats.utils.Notifications;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -69,11 +70,12 @@ public class ChatPage {
 
     /**
      * Пишет итог боя в лог отдельными полями: в JSON-логе это damage_hp и experience, по ним в Kibana
-     * строятся графики урона и опыта.
+     * строятся графики урона и опыта. Он же попадает в статистику игры для /stats.
      */
     private static void logResult(String result) {
         Long damage = number(DAMAGE, result);
         Long experience = number(EXPERIENCE, result);
+        GameStats.battle(damage, experience);
         log.info("Battle result: {}, {}", kv("damage_hp", damage), kv("experience", experience));
     }
 

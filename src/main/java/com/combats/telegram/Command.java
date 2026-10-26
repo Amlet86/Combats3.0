@@ -11,6 +11,7 @@ enum Command {
     STOP("/stop", "stop the game"),
     STATUS("/status", "what the bot is doing now"),
     SCREENSHOT("/screenshot", "screenshot of the game"),
+    STATS("/stats", "battles, damage and experience in the current game"),
     HELP("/help", "list of commands");
 
     final String text;
