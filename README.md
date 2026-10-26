@@ -1,4 +1,5 @@
 # Combats 3.0
+[![CI](https://github.com/Amlet86/Combats3.0/actions/workflows/ci.yml/badge.svg)](https://github.com/Amlet86/Combats3.0/actions/workflows/ci.yml)
 
 Бот для браузерной онлайн-игры [Бойцовский клуб](https://www.combats.com/).
 Входит в игру под вашим персонажем и сам проводит бои: PvP в хаотичных поединках или PvE в подземелье.
