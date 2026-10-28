@@ -1,6 +1,5 @@
 package com.combats.utils;
 
-import com.codeborne.selenide.SelenideElement;
 import com.codeborne.selenide.WebDriverRunner;
 import com.combats.exception.GameTimeIsOverException;
 import org.openqa.selenium.OutputType;
@@ -13,9 +12,7 @@ import java.util.Random;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static com.codeborne.selenide.Selenide.$$;
 import static com.combats.utils.Properties.getEndTimeOfTheGame;
-import static java.lang.Double.parseDouble;
 import static java.lang.Thread.sleep;
 
 /**
@@ -71,31 +68,6 @@ public class Utils {
         } catch (RuntimeException e) {
             log.warn("Can't take a screenshot", e);
             return null;
-        }
-    }
-
-    /**
-     * Ищет на странице заявок заявку, бой по которой начнётся раньше всех (но не позже чем через 5 минут).
-     *
-     * @return номер заявки среди радиокнопок «gocombat» или -1, если подходящей нет
-     */
-    public static int chooseRadioWithMinTime() {
-        int minTime = -1;
-        int iterator = 0;
-        double tmpTime = 5;
-        try {
-            for (SelenideElement element : $$("[action='zayavka.pl'] > .dsc > i > b:first-of-type")) {
-                double time = parseDouble(element.getText());
-                if (time <= tmpTime) {
-                    tmpTime = time;
-                    minTime = iterator;
-                }
-                iterator++;
-            }
-            return minTime;
-        } catch (NumberFormatException e) {
-            log.warn("Can't parse start time of a battle application", e);
-            return -1;
         }
     }
 

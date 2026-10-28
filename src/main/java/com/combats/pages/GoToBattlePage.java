@@ -1,14 +1,31 @@
 package com.combats.pages;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
+import com.codeborne.selenide.ElementsCollection;
 import com.codeborne.selenide.SelenideElement;
-import org.openqa.selenium.By;
 import org.openqa.selenium.support.FindBy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static com.codeborne.selenide.Condition.visible;
 import static com.codeborne.selenide.Selenide.*;
 import static com.combats.utils.GameControl.status;
 import static com.combats.utils.Properties.getUserLogin;
@@ -55,8 +72,13 @@ public class GoToBattlePage extends BasePage {
     @FindBy(css = "[value='Обновить']")
     private SelenideElement refreshBtn;
 
-    @FindBy(css = "[name=confirm1]")
-    private SelenideElement confirm;
+    /**
+     * Кнопки «Принять участие в мясорубке». Имя у настоящей кнопки другое («confirm1555» 28.10.2026)
+     * и может меняться, а рядом стоит скрытая ловушка {@code confirm1}: её onclick ставит в поле
+     * {@code fb} единицу, видимо, метку бота. Поэтому ищем по тексту, а кнопку с {@code fb} не берём никогда.
+     */
+    private final ElementsCollection confirmBtns =
+            $$("input[type=submit][value^='Принять участие']:not([onclick*='fb'])");
 
     @FindBy(xpath = "//*[.='Подать заявку на хаотичный бой']")
     private SelenideElement applicationChaos;
@@ -68,7 +90,39 @@ public class GoToBattlePage extends BasePage {
     @FindBy(css = "select[name=cena2]")
     private SelenideElement opponentsStrength;
 
-    private By goCombat = By.cssSelector("[name=gocombat]");
+    /**
+     * Пары [значение радиокнопки, текст от неё до следующей радиокнопки]. Текст скриптов выбрасываем:
+     * перед каждым участником стоит {@code <script>drwfl("Alkatas",…)</script>}, его скобки ломали разбор,
+     * и 28.10.2026 бот не видел ни одной заявки и подавал свою.
+     */
+    private static final String READ_APPLICATIONS = "const radios = [...document.querySelectorAll('input[name=gocombat]')];"
+            + "return radios.map((r, i) => {"
+            + "  const range = document.createRange();"
+            + "  range.setStartAfter(r);"
+            + "  const next = radios[i + 1];"
+            + "  if (next) range.setEndBefore(next);"
+            + "  else if (r.form) range.setEndAfter(r.form);"
+            + "  else range.setEnd(document.body, document.body.childNodes.length);"
+            + "  const text = range.cloneContents();"
+            + "  text.querySelectorAll('script, style').forEach(s => s.remove());"
+            + "  return [r.value, text.textContent.replace(/\\s+/g, ' ')];"
+            + "});";
+    /** Сколько символов текста страницы писать в лог, когда вступить в заявку не получилось. */
+    private static final int PAGE_TEXT_IN_LOG = 600;
+    /** Сколько проверок подряд без подходящей чужой заявки нужно, чтобы подать свою. */
+    static final int LOOKS_BEFORE_OWN_APPLICATION = 2;
+    private static final Duration PAGE_LOAD_TIMEOUT = Duration.ofSeconds(10);
+    private static final Path SNAPSHOTS_DIR =
+            Paths.get(System.getProperty("user.home"), ".combats", "logs", "applications");
+    private static final int SNAPSHOTS_TO_KEEP = 20;
+
+    /** Сколько проверок подряд не нашли подходящую чужую заявку. */
+    private int looksWithoutApplication;
+
+    /** Заявка, в которую вступили на прошлом шаге; на следующем шаге проверяем, что получилось. */
+    private ChaosApplication lastJoined;
+    /** Заявки, в которые вступить не получилось: в них больше не пробуем, пока ждём этот бой. */
+    private final Set<String> rejected = new HashSet<>();
 
     /**
      * Попадает в PvP-бой: вступает в чужую заявку с ближайшим стартом или подаёт свою
@@ -123,13 +177,27 @@ public class GoToBattlePage extends BasePage {
      * «Element not found {//*[.='Подать заявку на хаотичный бой']}», хотя заявка уже подана.
      */
     private void waitOnApplicationsPage() {
+        waitForPageLoaded();
         String pageText = $("body").getText();
         String minutes = minutesToStart(pageText, getUserLogin());
         status("Waiting for a chaotic battle to start" + (minutes == null ? "" : ": " + minutes + " min left"));
+        boolean waiting = isWaitingForOwnBattle(pageText);
+        checkLastJoin(waiting, pageText);
         // уже стоим в заявке: вступать в другую или подавать свою не нужно
-        if (!isWaitingForOwnBattle(pageText) && (joinApplication() || submitApplication())) {
-            waitAboutSomeSeconds(5);
-            return;
+        if (!waiting) {
+            if (joinApplication(pageText)) {
+                looksWithoutApplication = 0;
+                waitAboutSomeSeconds(5);
+                return;
+            }
+            if (shouldSubmitOwn(++looksWithoutApplication)) {
+                savePageSnapshot();
+                if (submitApplication()) {
+                    waitAboutSomeSeconds(5);
+                    return;
+                }
+            } else
+                log.info("No application to join yet, look again after refreshing the page");
         }
         if (refreshBtn.isDisplayed())
             refreshBtn.click();
@@ -137,20 +205,124 @@ public class GoToBattlePage extends BasePage {
     }
 
     /**
-     * Вступает в чужую заявку с ближайшим стартом.
+     * Свою заявку подаём, только если чужой не нашли {@link #LOOKS_BEFORE_OWN_APPLICATION} раза подряд,
+     * с обновлением страницы между проверками. 28.10.2026 бот подал свою заявку через секунду после
+     * открытия страницы, когда чужая уже была: «Обновить» и «Подать заявку» стоят на странице выше
+     * списка заявок и появляются раньше него, и бот решил, что заявок нет.
+     *
+     * @param looks сколько раз подряд не нашли заявку, включая эту проверку
+     */
+    static boolean shouldSubmitOwn(int looks) {
+        return looks >= LOOKS_BEFORE_OWN_APPLICATION;
+    }
+
+    /**
+     * Ждёт, пока страница во фрейме загрузится целиком, но не дольше {@link #PAGE_LOAD_TIMEOUT}:
+     * если не дождались, работаем с тем, что есть.
+     */
+    private void waitForPageLoaded() {
+        Instant deadline = Instant.now().plus(PAGE_LOAD_TIMEOUT);
+        while (Instant.now().isBefore(deadline)) {
+            try {
+                if ("complete".equals(executeJavaScript("return document.readyState;")))
+                    return;
+            } catch (RuntimeException e) {
+                // фрейм как раз перезагружается
+            }
+            sleep(500);
+        }
+        log.warn("The applications page hasn't loaded in {} seconds", PAGE_LOAD_TIMEOUT.toSeconds());
+    }
+
+    /**
+     * Сохраняет страницу заявок перед подачей своей заявки в ~/.combats/logs/applications, хранит последние
+     * {@link #SNAPSHOTS_TO_KEEP}. Если бот снова подаст свою заявку при чужой, по снимку будет видно почему.
+     */
+    private static void savePageSnapshot() {
+        try {
+            String html = executeJavaScript("return document.documentElement.outerHTML;");
+            Files.createDirectories(SNAPSHOTS_DIR);
+            Path file = SNAPSHOTS_DIR.resolve("applications-"
+                    + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss")) + ".html");
+            Files.writeString(file, html == null ? "" : html, StandardCharsets.UTF_8);
+            log.info("The applications page is saved to {}", file);
+            try (Stream<Path> snapshots = Files.list(SNAPSHOTS_DIR)) {
+                List<Path> old = snapshots.sorted(Comparator.reverseOrder()).skip(SNAPSHOTS_TO_KEEP).toList();
+                for (Path path : old)
+                    Files.deleteIfExists(path);
+            }
+        } catch (IOException | RuntimeException e) {
+            log.warn("Can't save the applications page", e);
+        }
+    }
+
+    /**
+     * Проверяет, получилось ли вступить в заявку на прошлом шаге. Если персонаж не в заявке,
+     * эту заявку больше не выбираем, а пробуем другие. Раньше после неудачи бот сразу подавал свою,
+     * хотя рядом были другие подходящие заявки. Текст страницы пишем в лог: там должна быть причина.
+     */
+    private void checkLastJoin(boolean waiting, String pageText) {
+        if (lastJoined == null)
+            return;
+        if (!waiting) {
+            rejected.add(lastJoined.radioValue());
+            log.warn("Haven't got into the application {}, try another one. The page: {}", lastJoined,
+                    pageText.length() > PAGE_TEXT_IN_LOG ? pageText.substring(0, PAGE_TEXT_IN_LOG) + "…" : pageText);
+        }
+        lastJoined = null;
+    }
+
+    /**
+     * Вступает в подходящую чужую заявку, см. {@link ChaosApplication#choose}.
      *
      * @return true, если нажали «Принять участие»
      */
-    private boolean joinApplication() {
-        if (!confirm.isDisplayed())
+    private boolean joinApplication(String pageText) {
+        List<ChaosApplication> applications = readApplications();
+        Integer ownLevel = ChaosApplication.ownLevel(pageText, getUserLogin());
+        Optional<ChaosApplication> chosen = ChaosApplication.choose(applications, ownLevel, rejected);
+        if (chosen.isEmpty()) {
+            log.info("No application to join (level {}, tried without success {}): {}", ownLevel, rejected, applications);
             return false;
-        int number = chooseRadioWithMinTime();
-        if (number < 0)
+        }
+        // кнопок «Принять участие» на странице две, над списком и под ним, и первая бывает скрыта
+        SelenideElement confirm = confirmBtns.findBy(visible);
+        if (!confirm.isDisplayed()) {
+            log.warn("The button «Принять участие» isn't visible, can't join {}", chosen.get());
             return false;
-        $$(goCombat).get(number).click();
+        }
+        SelenideElement radio = $("[name=gocombat][value='" + chosen.get().radioValue() + "']");
+        if (!radio.isDisplayed()) {
+            log.warn("The radio button of the application {} isn't visible", chosen.get());
+            rejected.add(chosen.get().radioValue());
+            return false;
+        }
+        radio.click();
         humanClick(confirm);
-        log.info("Joined a chaotic battle application");
+        lastJoined = chosen.get();
+        log.info("Joined a chaotic battle application {} of {}", chosen.get(), applications);
         return true;
+    }
+
+    /**
+     * Читает чужие заявки: у каждой радиокнопки {@code gocombat} берёт текст до следующей радиокнопки
+     * (у последней до конца формы). Так не важно, как именно размечена строка заявки.
+     */
+    private static List<ChaosApplication> readApplications() {
+        List<ChaosApplication> applications = new ArrayList<>();
+        try {
+            List<?> rows = executeJavaScript(READ_APPLICATIONS);
+            if (rows == null)
+                return applications;
+            for (Object row : rows) {
+                List<?> cells = (List<?>) row;
+                ChaosApplication.parse(String.valueOf(cells.get(0)), String.valueOf(cells.get(1)))
+                        .ifPresent(applications::add);
+            }
+        } catch (RuntimeException e) {
+            log.warn("Can't read the applications", e);
+        }
+        return applications;
     }
 
     /**
