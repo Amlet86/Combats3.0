@@ -36,6 +36,10 @@ record ChaosApplication(String radioValue, int players, int minLevel, int maxLev
      * (в логе 26.10.2026 бот «вступал» в заявку за 0.3 мин. до начала и потом подавал свою).
      */
     static final double MIN_MINUTES_TO_JOIN = 0.3;
+    /**
+     * Больше этого времени до начала заявка не годится.
+     */
+    static final double MAX_MINUTES_TO_JOIN = 5.0;
 
     /**
      * @param radioValue значение радиокнопки
@@ -56,7 +60,8 @@ record ChaosApplication(String radioValue, int players, int minLevel, int maxLev
 
     /**
      * Выбирает заявку, в которую стоит вступить: подходит по уровню (если он известен), до начала
-     * не меньше {@link #MIN_MINUTES_TO_JOIN}, в неё ещё не пробовали вступить безуспешно.
+     * не меньше {@link #MIN_MINUTES_TO_JOIN} и не больше {@link #MAX_MINUTES_TO_JOIN}, в неё ещё не пробовали
+     * вступить безуспешно.
      * Из таких берём ту, где больше участников: бой не начнётся, если собралось меньше 4 человек.
      * При равенстве берём ту, что начнётся раньше.
      *
@@ -69,6 +74,7 @@ record ChaosApplication(String radioValue, int players, int minLevel, int maxLev
         return applications.stream()
                 .filter(application -> application.fits(ownLevel))
                 .filter(application -> application.minutes >= MIN_MINUTES_TO_JOIN)
+                .filter(application -> application.minutes <= MAX_MINUTES_TO_JOIN)
                 .filter(application -> !rejected.contains(application.radioValue))
                 .max(Comparator.comparingInt(ChaosApplication::players)
                         .thenComparing(Comparator.comparingDouble(ChaosApplication::minutes).reversed()));

@@ -5,6 +5,7 @@ import java.time.Instant;
 
 import com.codeborne.selenide.ElementsCollection;
 import com.codeborne.selenide.SelenideElement;
+import com.codeborne.selenide.ex.UIAssertionError;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -58,6 +59,12 @@ public class BattlePage extends BasePage {
      * появляется после приёма. Закрытое окно остаётся в DOM скрытым, поэтому нужна видимая кнопка.
      */
     private ElementsCollection confirmOkBtns = $$("table.WindowNeitral button.WindowOk");
+    /**
+     * Кнопки, хотя бы одна из которых видна на экране боя. Если персонаж уже погиб, «Вперёд» не будет,
+     * а будут «Обновить» и «Выйти»: 29.10.2026 бот после ошибки возвращался в такой бой, минуту ждал
+     * «Вперёд» и останавливался после трёх ошибок подряд.
+     */
+    private ElementsCollection battleBtns = $$("[action=commit], [action=refresh], [action=exit], [action=gameover]");
     private ElementsCollection attackRadios = $$(ATTACK_RADIOS);
     private ElementsCollection defendRadios = $$(DEFEND_RADIOS);
     private SelenideElement text = $("td.UserBattleError");
@@ -72,7 +79,7 @@ public class BattlePage extends BasePage {
     public void fight() {
         switchTo().defaultContent();
         // при начале боя игра перезагружает всю страницу, это дольше общего таймаута
-        commitBtn.shouldBe(visible, BATTLE_START_TIMEOUT);
+        battleBtns.findBy(visible).shouldBe(visible, BATTLE_START_TIMEOUT);
         status("In battle");
         // когда бой закончен, игра оставляет на экране только кнопку «Вернуться»
         int secondsWithoutBattleButtons = 0;
@@ -222,7 +229,13 @@ public class BattlePage extends BasePage {
             log.warn("Zones still aren't chosen, press «Вперёд» anyway");
         if (!commitBtn.isDisplayed())
             return;
-        commitBtn.click();
+        try {
+            commitBtn.click();
+        } catch (UIAssertionError e) {
+            // «Вперёд» пропала, пока выбирали удары: обычно персонаж погиб от чужого удара (29.10.2026).
+            // Это не ошибка, цикл боя увидит «Выйти» или «Вернуться»
+            log.info("«Вперёд» has disappeared before the click, the battle screen has changed");
+        }
     }
 
     /**

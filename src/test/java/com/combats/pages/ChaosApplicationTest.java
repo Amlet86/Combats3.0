@@ -110,10 +110,18 @@ class ChaosApplicationTest {
     }
 
     @Test
-    void applicationLongerThanFiveMinutesIsChosenToo() {
-        // раньше заявки дальше 5 минут пропускались, и бот подавал свою
-        List<ChaosApplication> applications = List.of(new ChaosApplication("long", 2, 8, 10, 9.5));
-        assertEquals("long", choose(applications, 9).radioValue());
+    void applicationLongerThanFiveMinutesIsNotChosen() {
+        // долгое ожидание тормозит фарм опыта: лучше подать свою заявку, она начнётся через 5 минут
+        List<ChaosApplication> applications = List.of(new ChaosApplication("long", 9, 8, 10, 27.0));
+        assertTrue(ChaosApplication.choose(applications, 9, Set.of()).isEmpty());
+    }
+
+    @Test
+    void applicationInFiveMinutesIsChosenOverLongerOne() {
+        List<ChaosApplication> applications = List.of(
+                new ChaosApplication("long", 9, 8, 10, 5.1),
+                new ChaosApplication("five", 1, 8, 10, 5.0));
+        assertEquals("five", choose(applications, 9).radioValue());
     }
 
     private static ChaosApplication choose(List<ChaosApplication> applications, Integer ownLevel) {
