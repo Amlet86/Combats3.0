@@ -9,6 +9,8 @@ enum Command {
 
     PLAY("/play", "start the game with the last settings"),
     STOP("/stop", "stop the game"),
+    PAUSE("/pause", "pause the bot to play by hand, the browser stays open"),
+    RESUME("/resume", "give control back to the bot after a pause"),
     STATUS("/status", "what the bot is doing now"),
     SCREENSHOT("/screenshot", "screenshot of the game"),
     STATS("/stats", "battles, damage and experience in the current game"),

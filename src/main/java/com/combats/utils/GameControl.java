@@ -4,6 +4,7 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.Consumer;
 
+import com.combats.exception.GameResumedException;
 import com.combats.exception.GameStoppedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,6 +22,10 @@ public class GameControl {
     private static volatile String lastStatus;
     private static volatile boolean stopRequested;
     private static volatile boolean running;
+    private static volatile boolean pauseRequested;
+    /** Пауза срабатывает только в игровом цикле: при запуске браузера и входе её некуда вернуть. */
+    private static volatile boolean pauseAllowed;
+    private static final long PAUSE_CHECK_INTERVAL_MS = 500;
     private static volatile Thread gameThread;
     private static final Queue<Runnable> gameThreadTasks = new ConcurrentLinkedQueue<>();
 
@@ -54,6 +59,8 @@ public class GameControl {
      */
     public static void prepare(Thread thread) {
         stopRequested = false;
+        pauseRequested = false;
+        pauseAllowed = false;
         lastStatus = null;
         gameThreadTasks.clear();
         gameThread = thread;
@@ -98,6 +105,46 @@ public class GameControl {
     }
 
     /**
+     * Просит игру встать на паузу, чтобы человек мог играть сам. Поток игры останавливается
+     * при ближайшем вызове {@link #checkStop()}: в бою это следующий шаг, в ожидании до 10 секунд.
+     *
+     * @return false, если пауза уже была запрошена
+     */
+    public static boolean requestPause() {
+        if (pauseRequested)
+            return false;
+        pauseRequested = true;
+        return true;
+    }
+
+    /**
+     * Снимает паузу. Игра начинает круг заново, см. {@link GameResumedException}.
+     *
+     * @return false, если паузы не было
+     */
+    public static boolean resume() {
+        if (!pauseRequested)
+            return false;
+        pauseRequested = false;
+        return true;
+    }
+
+    /**
+     * @return true, если пауза запрошена (поток игры мог ещё не дойти до неё)
+     */
+    public static boolean isPauseRequested() {
+        return pauseRequested;
+    }
+
+    /**
+     * Разрешает или запрещает паузу. Игровой цикл разрешает её, когда браузер запущен и вход выполнен:
+     * после паузы цикл начинает круг заново. Запрошенная раньше пауза сработает, как только её разрешат.
+     */
+    public static void allowPause(boolean allowed) {
+        pauseAllowed = allowed;
+    }
+
+    /**
      * Ставит задачу в очередь потока игры. Нужна для действий с браузером из другого потока:
      * Selenide привязывает браузер к потоку, который его запустил.
      * Задача выполнится при ближайшем вызове {@link #checkStop()}.
@@ -107,14 +154,44 @@ public class GameControl {
     }
 
     /**
-     * Для циклов игры: выполняет задачи из очереди потока игры и прекращает игру,
-     * если пользователь попросил её остановить.
+     * Для циклов игры: выполняет задачи из очереди потока игры, прекращает игру, если пользователь
+     * попросил её остановить, и ждёт, если он поставил игру на паузу.
      *
      * @throws GameStoppedException если пользователь попросил остановить игру
+     * @throws GameResumedException если игра стояла на паузе и пользователь её снял
      */
     public static void checkStop() {
         if (stopRequested)
             throw new GameStoppedException();
+        runGameThreadTasks();
+        if (pauseRequested && pauseAllowed)
+            waitWhilePaused();
+    }
+
+    /**
+     * Держит поток игры, пока стоит пауза. Браузер в это время свободен, человек играет сам.
+     * Скриншоты из Telegram снимаются и на паузе, «Stop» тоже работает.
+     */
+    private static void waitWhilePaused() {
+        log.info("The game is paused");
+        status("Paused: you can play by hand, send /resume to give control back to the bot");
+        Notifications.message("The bot is paused, you can play by hand. Send /resume to give control back to the bot.");
+        while (pauseRequested && !stopRequested) {
+            runGameThreadTasks();
+            try {
+                Thread.sleep(PAUSE_CHECK_INTERVAL_MS);
+            } catch (InterruptedException e) {
+                // «Stop» будит поток прерыванием, флаг остановки проверит цикл
+            }
+        }
+        if (stopRequested)
+            throw new GameStoppedException();
+        log.info("The game is resumed");
+        status("Resumed after the pause");
+        throw new GameResumedException();
+    }
+
+    private static void runGameThreadTasks() {
         Runnable task;
         while ((task = gameThreadTasks.poll()) != null) {
             try {

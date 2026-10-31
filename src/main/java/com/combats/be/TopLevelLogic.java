@@ -6,7 +6,9 @@ import java.time.Instant;
 import com.combats.pages.ChatPage;
 import com.combats.pages.CityPage;
 import com.combats.pages.PageState;
+import com.combats.utils.GameControl;
 import com.combats.utils.GameStats;
+import com.combats.exception.GameResumedException;
 import com.combats.exception.GameStoppedException;
 import com.combats.exception.GameTimeIsOverException;
 import com.combats.utils.LogContext;
@@ -107,6 +109,7 @@ public class TopLevelLogic extends BaseLevelLogic {
                 return STOPPED_BY_USER;
             throw e;
         } finally {
+            GameControl.allowPause(false);
             // после «Stop» поток прерван, а с флагом прерывания WebDriver может не закрыть браузер
             Thread.interrupted();
             endBrowser();
@@ -123,6 +126,7 @@ public class TopLevelLogic extends BaseLevelLogic {
      */
     private String playUntilEndTime() {
         int errorsInARow = 0;
+        GameControl.allowPause(true);
         while (hasGameTime()) {
             Throwable error;
             try {
@@ -132,6 +136,10 @@ public class TopLevelLogic extends BaseLevelLogic {
                 continue;
             } catch (GameTimeIsOverException e) {
                 break;
+            } catch (GameResumedException e) {
+                startOverAfterPause();
+                errorsInARow = 0;
+                continue;
             } catch (GameStoppedException e) {
                 return STOPPED_BY_USER;
             } catch (Error | RuntimeException e) {
@@ -147,6 +155,10 @@ public class TopLevelLogic extends BaseLevelLogic {
                 recovered = recovery.recover();
             } catch (GameTimeIsOverException e) {
                 break;
+            } catch (GameResumedException e) {
+                startOverAfterPause();
+                errorsInARow = 0;
+                continue;
             } catch (GameStoppedException e) {
                 return STOPPED_BY_USER;
             } catch (RuntimeException e) {
@@ -174,6 +186,16 @@ public class TopLevelLogic extends BaseLevelLogic {
                     + firstLine(error.getMessage()), screenshot);
         }
         return GAME_TIME_IS_OVER;
+    }
+
+    /**
+     * После паузы человек мог оставить браузер где угодно: в городе, в бою, на странице заявок.
+     * Перезагружаем страницу и начинаем круг игры заново, как после ошибки, но ошибкой это не считаем:
+     * круг сам разберётся, где персонаж (идёт ли бой, нужно ли ждать HP).
+     */
+    private static void startOverAfterPause() {
+        log.info("Start the game round over after the pause");
+        reloadPage();
     }
 
     /**

@@ -2,6 +2,7 @@ package com.combats.utils;
 
 import java.util.concurrent.atomic.AtomicReference;
 
+import com.combats.exception.GameResumedException;
 import com.combats.exception.GameStoppedException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -105,6 +106,74 @@ class GameControlTest {
 
         assertDoesNotThrow(GameControl::checkStop);
         assertTrue(secondRan.get());
+    }
+
+    @Test
+    void pauseHoldsGameThreadUntilResumeAndThenStartsOver() throws InterruptedException {
+        AtomicReference<Throwable> leftWith = new AtomicReference<>();
+        AtomicReference<Boolean> screenshotTaken = new AtomicReference<>(false);
+        Thread gameThread = new Thread(() -> {
+            try {
+                while (true) {
+                    GameControl.checkStop();
+                    Thread.sleep(50);
+                }
+            } catch (Throwable e) {
+                leftWith.set(e);
+            }
+        });
+        GameControl.prepare(gameThread);
+        GameControl.allowPause(true);
+        gameThread.start();
+
+        assertTrue(GameControl.requestPause());
+        assertFalse(GameControl.requestPause(), "the second /pause changes nothing");
+        Thread.sleep(300);
+        assertTrue(gameThread.isAlive());
+        assertTrue(GameControl.getLastStatus().startsWith("Paused"), GameControl.getLastStatus());
+        // скриншот из Telegram снимается и на паузе
+        GameControl.runInGameThread(() -> screenshotTaken.set(true));
+        Thread.sleep(800);
+        assertTrue(screenshotTaken.get());
+        assertNull(leftWith.get(), "the game thread must wait while paused");
+
+        assertTrue(GameControl.resume());
+        gameThread.join(2000);
+
+        assertInstanceOf(GameResumedException.class, leftWith.get());
+        assertFalse(GameControl.resume(), "the bot isn't paused anymore");
+    }
+
+    @Test
+    void stopWorksDuringPause() throws InterruptedException {
+        AtomicReference<Throwable> leftWith = new AtomicReference<>();
+        Thread gameThread = new Thread(() -> {
+            try {
+                while (true)
+                    GameControl.checkStop();
+            } catch (Throwable e) {
+                leftWith.set(e);
+            }
+        });
+        GameControl.prepare(gameThread);
+        GameControl.allowPause(true);
+        GameControl.requestPause();
+        gameThread.start();
+        Thread.sleep(200);
+
+        GameControl.requestStop();
+        gameThread.join(2000);
+
+        assertInstanceOf(GameStoppedException.class, leftWith.get());
+    }
+
+    @Test
+    void pauseWaitsUntilTheGameLoopAllowsIt() {
+        // при запуске браузера и входе пауза не срабатывает, а ждёт игрового цикла
+        GameControl.prepare(Thread.currentThread());
+        GameControl.requestPause();
+        assertDoesNotThrow(GameControl::checkStop);
+        assertTrue(GameControl.isPauseRequested());
     }
 
     @Test

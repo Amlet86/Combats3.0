@@ -128,6 +128,32 @@ class TelegramBotTest {
     }
 
     @Test
+    void pauseAndResumeOfTheRunningGame() {
+        GameControl.prepare(new Thread(() -> { }));
+
+        bot.consume(update("Amlett", OWNER_CHAT, "/pause"));
+        assertTrue(lastText().startsWith("Pausing the bot"), lastText());
+        assertTrue(GameControl.isPauseRequested());
+
+        bot.consume(update("Amlett", OWNER_CHAT, "/pause"));
+        assertTrue(lastText().startsWith("The bot is already paused"), lastText());
+
+        bot.consume(update("Amlett", OWNER_CHAT, "/resume"));
+        assertEquals("The bot takes control back.", lastText());
+        assertFalse(GameControl.isPauseRequested());
+
+        bot.consume(update("Amlett", OWNER_CHAT, "/resume"));
+        assertEquals("The bot isn't paused.", lastText());
+    }
+
+    @Test
+    void pauseWithoutGameIsRefused() {
+        bot.consume(update("Amlett", OWNER_CHAT, "/pause"));
+        assertEquals("No game is running.", lastText());
+        assertFalse(GameControl.isPauseRequested());
+    }
+
+    @Test
     void statsShowBattlesOfTheGame() {
         GameStats.start();
         GameStats.battle(3802L, 23364L);

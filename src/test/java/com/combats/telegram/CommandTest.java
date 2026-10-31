@@ -13,6 +13,8 @@ class CommandTest {
     void parsesCommandsFromKeyboardAndMenu() {
         assertEquals(Command.PLAY, Command.parse("/play"));
         assertEquals(Command.STOP, Command.parse("/stop"));
+        assertEquals(Command.PAUSE, Command.parse("/pause"));
+        assertEquals(Command.RESUME, Command.parse("/resume"));
         assertEquals(Command.STATUS, Command.parse("/status"));
         assertEquals(Command.SCREENSHOT, Command.parse("/screenshot"));
         assertEquals(Command.STATS, Command.parse("/stats"));

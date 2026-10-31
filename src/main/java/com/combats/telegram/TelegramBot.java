@@ -44,7 +44,7 @@ class TelegramBot implements LongPollingSingleThreadUpdateConsumer, Notification
     private static final int MAX_CAPTION_LENGTH = 1024;
 
     private static final ReplyKeyboardMarkup KEYBOARD = ReplyKeyboardMarkup.builder()
-            .keyboardRow(new KeyboardRow(Command.PLAY.text, Command.STOP.text))
+            .keyboardRow(new KeyboardRow(Command.PLAY.text, Command.PAUSE.text, Command.RESUME.text, Command.STOP.text))
             .keyboardRow(new KeyboardRow(Command.STATUS.text, Command.STATS.text, Command.SCREENSHOT.text))
             .resizeKeyboard(true)
             .build();
@@ -108,6 +108,21 @@ class TelegramBot implements LongPollingSingleThreadUpdateConsumer, Notification
                     yield "No game is running.";
                 GameControl.requestStop();
                 yield "Stopping the game...";
+            }
+            case PAUSE -> {
+                if (!GameControl.isRunning())
+                    yield "No game is running.";
+                if (!GameControl.requestPause())
+                    yield "The bot is already paused. Send " + Command.RESUME.text + " to give control back to it.";
+                // поток игры остановится на ближайшей проверке и сам пришлёт сообщение, что встал
+                yield "Pausing the bot... Wait for the message that it is paused before playing by hand.";
+            }
+            case RESUME -> {
+                if (!GameControl.isRunning())
+                    yield "No game is running. Send " + Command.PLAY.text + " to start.";
+                if (!GameControl.resume())
+                    yield "The bot isn't paused.";
+                yield "The bot takes control back.";
             }
             case STATUS -> {
                 if (!GameControl.isRunning())
