@@ -137,6 +137,22 @@ public class GameControl {
     }
 
     /**
+     * Бот не может продолжать сам: зовёт человека сообщением со скриншотом и встаёт на паузу до /resume.
+     * Вызывать из потока игры. Если снять паузу некому (нет Telegram) или пауза сейчас запрещена,
+     * ничего не делает: стоять вечно нельзя, вызывающий код должен сам решить, как быть.
+     *
+     * @throws GameResumedException когда человек снял паузу
+     * @throws GameStoppedException если человек остановил игру
+     */
+    public static void pauseForHuman(String text, byte[] screenshot) {
+        if (!pauseAllowed || !Notifications.hasReceiver())
+            return;
+        Notifications.photo(Notifications.mentionOwner(text), screenshot);
+        requestPause();
+        checkStop();
+    }
+
+    /**
      * Разрешает или запрещает паузу. Игровой цикл разрешает её, когда браузер запущен и вход выполнен:
      * после паузы цикл начинает круг заново. Запрошенная раньше пауза сработает, как только её разрешат.
      */

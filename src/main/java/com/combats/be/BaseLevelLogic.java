@@ -4,7 +4,6 @@ import com.codeborne.selenide.WebDriverRunner;
 import com.combats.pages.BasePage;
 import com.combats.pages.BattlePage;
 import com.combats.pages.CityPage;
-import com.combats.pages.DungeonsPage;
 import com.combats.pages.GoToBattlePage;
 import com.combats.pages.LoginPage;
 import com.combats.utils.FileWorker;
@@ -51,14 +50,16 @@ class BaseLevelLogic {
     }
 
     /**
-     * PvE: выход из прошлого боя, ходьба по подземелью до встречи с монстром и бой.
+     * PvE: выход из прошлого боя, вход в подземелье (если персонаж ещё не в нём), обход этажа до боя
+     * и бой. Если поход закончился без боя (этаж обойдён, персонаж погиб), следующий круг войдёт заново.
      */
     void PvE() {
         CityPage cityPage = new CityPage();
-        cityPage.exitFromBattle()
+        BattlePage battle = cityPage.exitFromBattle()
             .switchToTheDungeon()
-            .walkOnTheDungeon()
-            .fight();
+            .walkOnTheDungeon();
+        if (battle != null)
+            battle.fight();
     }
 
     /**

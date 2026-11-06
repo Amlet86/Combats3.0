@@ -8,6 +8,7 @@ import com.combats.pages.CityPage;
 import com.combats.pages.PageState;
 import com.combats.utils.GameControl;
 import com.combats.utils.GameStats;
+import com.combats.exception.DungeonIsOverException;
 import com.combats.exception.GameResumedException;
 import com.combats.exception.GameStoppedException;
 import com.combats.exception.GameTimeIsOverException;
@@ -21,7 +22,6 @@ import static com.codeborne.selenide.Selenide.switchTo;
 import static com.combats.utils.GameControl.checkStop;
 import static com.combats.utils.GameControl.isStopRequested;
 import static com.combats.utils.GameControl.status;
-import static com.combats.utils.MapNavigator.prepareRoadFile;
 import static com.combats.utils.Properties.getTypeOfGame;
 import static com.combats.utils.Properties.isHeadless;
 import static com.combats.utils.Utils.checkGameCanContinue;
@@ -99,7 +99,6 @@ public class TopLevelLogic extends BaseLevelLogic {
             ChatPage.reset();
             if (!loginInGame())
                 return "Login failed: check login and password.";
-            prepareRoadFile();
             return playUntilEndTime();
         } catch (GameTimeIsOverException e) {
             return GAME_TIME_IS_OVER;
@@ -142,6 +141,9 @@ public class TopLevelLogic extends BaseLevelLogic {
                 continue;
             } catch (GameStoppedException e) {
                 return STOPPED_BY_USER;
+            } catch (DungeonIsOverException e) {
+                log.info("The dungeon game is over: {}", e.getMessage());
+                return e.getMessage();
             } catch (Error | RuntimeException e) {
                 // после «Stop» операции браузера могут упасть с любой ошибкой, это не сбой игры
                 if (isStopRequested())

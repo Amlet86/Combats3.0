@@ -191,7 +191,7 @@ public class GoToBattlePage extends BasePage {
                 return;
             }
             if (shouldSubmitOwn(++looksWithoutApplication)) {
-                savePageSnapshot();
+                savePageSnapshot("applications");
                 if (submitApplication()) {
                     waitAboutSomeSeconds(5);
                     return;
@@ -235,17 +235,20 @@ public class GoToBattlePage extends BasePage {
     }
 
     /**
-     * Сохраняет страницу заявок перед подачей своей заявки в ~/.combats/logs/applications, хранит последние
-     * {@link #SNAPSHOTS_TO_KEEP}. Если бот снова подаст свою заявку при чужой, по снимку будет видно почему.
+     * Сохраняет текущую страницу в ~/.combats/logs/applications, хранит последние
+     * {@link #SNAPSHOTS_TO_KEEP}. Снимок делаем там, где бот принимает спорное решение: подаёт свою заявку
+     * или не видит дороги к подземелью. По нему потом видно почему.
+     *
+     * @param name начало имени файла
      */
-    private static void savePageSnapshot() {
+    static void savePageSnapshot(String name) {
         try {
             String html = executeJavaScript("return document.documentElement.outerHTML;");
             Files.createDirectories(SNAPSHOTS_DIR);
-            Path file = SNAPSHOTS_DIR.resolve("applications-"
+            Path file = SNAPSHOTS_DIR.resolve(name + "-"
                     + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss")) + ".html");
             Files.writeString(file, html == null ? "" : html, StandardCharsets.UTF_8);
-            log.info("The applications page is saved to {}", file);
+            log.info("The page is saved to {}", file);
             try (Stream<Path> snapshots = Files.list(SNAPSHOTS_DIR)) {
                 List<Path> old = snapshots.sorted(Comparator.reverseOrder()).skip(SNAPSHOTS_TO_KEEP).toList();
                 for (Path path : old)

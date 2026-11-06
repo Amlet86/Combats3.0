@@ -101,8 +101,8 @@ public class Utils {
      * @param seconds примерная длительность паузы в секундах
      */
     public static void waitAboutSomeSeconds(int seconds){
-        int minWaitTime = (int) (seconds * 1000 / 1.1);
-        int maxWaitTime = (int) (seconds * 1000 / 0.9);
+        int minWaitTime = (int) (seconds * 1000 / 0.6);
+        int maxWaitTime = (int) (seconds * 1000 / 0.4);
         int exactWaitTime = new Random().nextInt(maxWaitTime - minWaitTime) + minWaitTime;
         try {
             sleep(exactWaitTime);

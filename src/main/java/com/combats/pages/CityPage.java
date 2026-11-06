@@ -32,15 +32,8 @@ public class CityPage extends BasePage {
     private static final List<String> ROUTE_TO_WARRIORS_HALL =
             List.of("Зал воинов", "Центральная грибница", "Овраг Возрождения");
     private static final int MAX_STEPS_TO_WARRIORS_HALL = 6;
-    /** Сколько ждать перехода с таймером. Вживую видели ~9 с, берём с запасом. */
-    private static final Duration MAX_PENDING_MOVE_TIME = Duration.ofSeconds(60);
 
     private SelenideElement battlesBtn = $("input[value='Поединки']");
-    /**
-     * Переход с таймером: «Вы перейдете в: Врата Душ (отмена)», где «отмена» — ссылка с clear_solo().
-     * Пока она видна, персонаж ещё на старом месте, и повторный клик по переходу не нужен.
-     */
-    private SelenideElement pendingMove = $$("a[onclick*='clear_solo']").findBy(visible);
     private SelenideElement hp = $("#HP");
     private SelenideElement gameover = $("[action=gameover]");
     private SelenideElement battleEnd = $("button.UserBattleEnd");
@@ -49,6 +42,8 @@ public class CityPage extends BasePage {
      * Нажимает «Вернуться», если на экране остался прошлый бой, и переходит во фрейм игры.
      */
     public CityPage exitFromBattle() {
+        // прошлый круг мог закончиться во фрейме игры: кнопки боя и сам фрейм лежат в верхнем документе
+        switchTo().defaultContent();
         humanClick(gameover);
         humanClick(battleEnd);
         switchToGameFrame();
@@ -140,36 +135,23 @@ public class CityPage extends BasePage {
     }
 
     /**
-     * Ждёт, пока закончится переход с таймером («Вы перейдете в: … (отмена)»). Повторный клик
-     * по переходу в это время мог перезапускать таймер, и бот не доходил до Зала воинов
-     * (снято 22.10.2026: таймер ~9 с при нескольких переходах подряд).
-     */
-    private void waitForPendingMove() {
-        Instant deadline = Instant.now().plus(MAX_PENDING_MOVE_TIME);
-        while (pendingMove.isDisplayed() && Instant.now().isBefore(deadline)) {
-            status("Moving to the next place");
-            sleep(1000);
-        }
-    }
-
-    /**
      * @return переход, ближайший к Залу воинов, или null, если на этой странице маршрута нет
      */
     private SelenideElement nextStepToWarriorsHall() {
-        for (String place : ROUTE_TO_WARRIORS_HALL) {
-            SelenideElement transition = $$("img[onclick*=\"'" + place + "'\"]").findBy(visible);
-            if (transition.isDisplayed())
-                return transition;
-        }
+        SelenideElement transition = nearestTransition(ROUTE_TO_WARRIORS_HALL);
+        if (transition != null)
+            return transition;
         // Demons city: маршрут по названиям не снимали, жмём ворота как раньше
         SelenideElement demonsGate = $(FIRST_PART_OF_IMAGES_LOCATOR + "dem_new_gates.gif']");
         return demonsGate.isDisplayed() ? demonsGate : null;
     }
 
     /**
-     * Переход к странице подземелья. Персонаж должен уже находиться в подземелье.
+     * Переход к подземелью: если персонаж ещё не в нём, ведёт его ко входу и начинает поход.
      */
     public DungeonsPage switchToTheDungeon() {
+        if (!DungeonsPage.inDungeon())
+            page(DungeonEntrancePage.class).enter();
         return page(DungeonsPage.class);
     }
 

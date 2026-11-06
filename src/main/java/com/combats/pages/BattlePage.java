@@ -25,6 +25,15 @@ public class BattlePage extends BasePage {
     private static final Logger log = LoggerFactory.getLogger(BattlePage.class);
 
     private static final int MAX_SECONDS_WITHOUT_BATTLE_BUTTONS = 60;
+    /** Столько проверок подряд вкладка боя должна быть скрыта: один раз это может быть перерисовка страницы. */
+    private static final int CHECKS_OF_HIDDEN_BATTLE_TAB = 2;
+    /**
+     * Скрыта ли вкладка боя. 06.11.2026 бой закончился, игра сама показала карту подземелья, а бот ещё 7 минут
+     * ждал «Вернуться» на скрытой вкладке: у вкладки {@code div.TabFrameScroll} стоял {@code display: none}.
+     */
+    private static final String BATTLE_TAB_HIDDEN = "const button = document.querySelector('[action=gameover]');"
+            + "const tab = button && button.closest('.TabFrameScroll');"
+            + "return !!tab && getComputedStyle(tab).display === 'none';";
     private static final Duration BATTLE_START_TIMEOUT = Duration.ofSeconds(60);
     /** Зоны: голова, грудь, живот, пояс, ноги. */
     private static final int ZONES = 5;
@@ -83,9 +92,15 @@ public class BattlePage extends BasePage {
         status("In battle");
         // когда бой закончен, игра оставляет на экране только кнопку «Вернуться»
         int secondsWithoutBattleButtons = 0;
+        int checksOfHiddenTab = 0;
         while (!returnBtn.isDisplayed()) {
             // время окончания игры бой не прерывает, а «Stop» прерывает: это явное решение пользователя
             checkStop();
+            checksOfHiddenTab = Boolean.TRUE.equals(executeJavaScript(BATTLE_TAB_HIDDEN)) ? checksOfHiddenTab + 1 : 0;
+            if (checksOfHiddenTab >= CHECKS_OF_HIDDEN_BATTLE_TAB) {
+                log.info("The battle tab is hidden: the battle is over and the game has left it");
+                return;
+            }
             if (commitBtn.isDisplayed())
                 makeMove();
             if (exitAfterDeath())
@@ -187,7 +202,8 @@ public class BattlePage extends BasePage {
             usePet();
         SelenideElement method = $(OWN_METHOD);
         if (method.isDisplayed()) {
-            method.click();
+            // через JavaScript: подсказка соседнего приёма ложится поверх кнопки и перехватывает клик мышью (05.11.2026)
+            humanJsClick(method);
             if (confirmWindowIfShown(METHOD_CONFIRM_TIMEOUT))
                 log.info("The method was confirmed in the window");
         }

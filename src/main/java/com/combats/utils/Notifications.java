@@ -44,6 +44,24 @@ public class Notifications {
     }
 
     /**
+     * @return true, если уведомления кому-то уходят, а не только пишутся в лог
+     */
+    public static boolean hasReceiver() {
+        return notifier != LOG_ONLY;
+    }
+
+    /**
+     * @return текст с упоминанием владельца в начале, чтобы Telegram выделил сообщение как адресованное ему;
+     * если владелец не задан, текст без изменений
+     */
+    static String mentionOwner(String text) {
+        String owner = Properties.getTelegramOwner();
+        if (owner == null || owner.isBlank())
+            return text;
+        return "@" + owner.trim().replaceFirst("^@", "") + " " + text;
+    }
+
+    /**
      * Отправляет текстовое уведомление.
      */
     public static void message(String text) {

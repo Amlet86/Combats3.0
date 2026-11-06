@@ -1,5 +1,7 @@
 package com.combats.utils;
 
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.combats.exception.GameResumedException;
@@ -165,6 +167,69 @@ class GameControlTest {
         gameThread.join(2000);
 
         assertInstanceOf(GameStoppedException.class, leftWith.get());
+    }
+
+    @Test
+    void botCallsHumanAndWaitsForResume() throws InterruptedException {
+        List<String> sent = new CopyOnWriteArrayList<>();
+        Notifications.setNotifier(new Notifications.Notifier() {
+            @Override
+            public void message(String text) {
+                sent.add(text);
+            }
+
+            @Override
+            public void photo(String caption, byte[] png) {
+                sent.add(caption);
+            }
+        });
+        AtomicReference<Throwable> leftWith = new AtomicReference<>();
+        Thread gameThread = new Thread(() -> {
+            try {
+                GameControl.pauseForHuman("Please connect", new byte[]{1});
+            } catch (Throwable e) {
+                leftWith.set(e);
+            }
+        });
+        try {
+            GameControl.prepare(gameThread);
+            GameControl.allowPause(true);
+            gameThread.start();
+            Thread.sleep(300);
+
+            assertTrue(gameThread.isAlive(), "the bot must wait for the human");
+            assertEquals("Please connect", sent.get(0));
+
+            GameControl.resume();
+            gameThread.join(2000);
+
+            assertInstanceOf(GameResumedException.class, leftWith.get());
+        } finally {
+            Notifications.setNotifier(null);
+        }
+    }
+
+    @Test
+    void callForHumanMentionsTheOwner() {
+        try {
+            Properties.setTelegramOwner(" @Amlett ");
+            assertEquals("@Amlett Please connect", Notifications.mentionOwner("Please connect"));
+            Properties.setTelegramOwner("Amlett");
+            assertEquals("@Amlett Please connect", Notifications.mentionOwner("Please connect"));
+            Properties.setTelegramOwner(" ");
+            assertEquals("Please connect", Notifications.mentionOwner("Please connect"));
+        } finally {
+            Properties.setTelegramOwner(null);
+        }
+    }
+
+    @Test
+    void withoutTelegramTheBotDoesNotWaitForever() {
+        GameControl.prepare(Thread.currentThread());
+        GameControl.allowPause(true);
+
+        assertDoesNotThrow(() -> GameControl.pauseForHuman("Please connect", null));
+        assertFalse(GameControl.isPauseRequested());
     }
 
     @Test
