@@ -2,6 +2,7 @@ package com.combats.pages;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 
 import com.codeborne.selenide.ElementsCollection;
 import com.codeborne.selenide.SelenideElement;
@@ -9,12 +10,14 @@ import com.codeborne.selenide.ex.UIAssertionError;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static com.codeborne.selenide.ClickOptions.usingJavaScript;
 import static com.codeborne.selenide.Condition.visible;
 import static com.codeborne.selenide.Selenide.*;
 import static com.combats.utils.GameControl.checkStop;
 import static com.combats.utils.GameControl.status;
 import static com.combats.utils.Properties.*;
 import static com.combats.utils.Utils.getRandomInt;
+import static com.combats.utils.Utils.parseHpPercent;
 import static com.combats.utils.Utils.waitAboutSomeSeconds;
 
 /**
@@ -42,6 +45,7 @@ public class BattlePage extends BasePage {
     private static final Duration EXIT_CONFIRM_TIMEOUT = Duration.ofSeconds(10);
     /** Сколько ждать окна подтверждения после приёма: обычно его нет, поэтому недолго. */
     private static final Duration METHOD_CONFIRM_TIMEOUT = Duration.ofSeconds(2);
+    private static final long AFTER_METHOD_PAUSE_MS = 400;
     private static final long CONFIRM_CHECK_INTERVAL_MS = 300;
     private static final Duration LEAVE_BATTLE_TIMEOUT = Duration.ofMinutes(3);
     private static final int MAX_CHOOSE_ATTEMPTS = 3;
@@ -56,8 +60,13 @@ public class BattlePage extends BasePage {
     static final String PET_ACTION = "pet_unleash";
     /** Доступная кнопка действия с питомцем. */
     static final String PET_METHOD = ".UserBattleResources button.UserBattleMethod:has(img[src*='/" + PET_ACTION + ".'])";
-    /** Доступный приём персонажа, не питомца. */
-    static final String OWN_METHOD = ".UserBattleResources button.UserBattleMethod:not(:has(img[src*='/pet_']))";
+    /** Доступный приём с заданной иконкой. */
+    private static final String METHOD = ".UserBattleResources button.UserBattleMethod:has(img[src*='/%s.'])";
+    /** Здоровье бойцов на экране боя: первым идёт персонаж, вторым его противник. */
+    private static final String HP_OF_FIGHTERS = "span.UserSlotHP";
+
+    /** Первый ход боя: только на нём применяем Тактический расчет. */
+    private boolean firstMove;
 
     private SelenideElement commitBtn = $("[action=commit]");
     private SelenideElement refreshBtn = $("[action=refresh]");
@@ -90,6 +99,7 @@ public class BattlePage extends BasePage {
         // при начале боя игра перезагружает всю страницу, это дольше общего таймаута
         battleBtns.findBy(visible).shouldBe(visible, BATTLE_START_TIMEOUT);
         status("In battle");
+        firstMove = true;
         // когда бой закончен, игра оставляет на экране только кнопку «Вернуться»
         int secondsWithoutBattleButtons = 0;
         int checksOfHiddenTab = 0;
@@ -114,7 +124,8 @@ public class BattlePage extends BasePage {
             // ход делаем кликом по «Вперёд», Enter нужен только чтобы подтолкнуть обновление, пока ждём противника
             if (!commitBtn.isDisplayed())
                 body.pressEnter();
-            waitAboutSomeSeconds(commitBtn.isDisplayed() ? 1 : 3);
+            // с коэффициентами waitAboutSomeSeconds значение 2 даёт паузу 3–5 с
+            waitAboutSomeSeconds(commitBtn.isDisplayed() ? 1 : 2);
         }
         getMessage();
         leaveBattle();
@@ -193,21 +204,33 @@ public class BattlePage extends BasePage {
     }
 
     /**
-     * Если включён питомец, сначала применяет действие с ним, затем первый доступный обычный приём.
-     * Приёмы питомца без галочки «Pet» не трогаем. Некоторые приёмы игра просит подтвердить
-     * в окне, как при выходе из боя: такое окно подтверждаем.
+     * Если включён питомец, сначала применяет действие с ним, затем все доступные приёмы по порядку
+     * из {@link BattleMethods}: за ход можно применить несколько (снято 06.11.2026). Приёмы питомца без
+     * галочки «Pet» не трогаем. Некоторые приёмы игра просит подтвердить в окне, как при выходе из боя:
+     * такое окно подтверждаем.
+     * <p>
+     * Таймер хода идёт (в Лиге 30 с), поэтому обычных пауз между действиями здесь нет: 06.11.2026 на каждый
+     * приём уходило около 5 с, и бот не успел сделать первый ход. Короткая пауза нужна, чтобы игра обновила кнопки.
      */
     private void clickBattleMethods() {
         if (getPet())
             usePet();
-        SelenideElement method = $(OWN_METHOD);
-        if (method.isDisplayed()) {
+        List<String> hp = $$(HP_OF_FIGHTERS).filterBy(visible).texts();
+        Integer ownHp = hp.isEmpty() ? null : parseHpPercent(hp.get(0));
+        Integer enemyHp = hp.size() < 2 ? null : parseHpPercent(hp.get(1));
+        List<String> methods = BattleMethods.priority(firstMove, ownHp, enemyHp);
+        firstMove = false;
+        for (String icon : methods) {
+            SelenideElement method = $(String.format(METHOD, icon));
+            if (!method.isDisplayed())
+                continue;
+            log.info("Use the method {}: own HP {}%, enemy HP {}%", icon, ownHp, enemyHp);
             // через JavaScript: подсказка соседнего приёма ложится поверх кнопки и перехватывает клик мышью (05.11.2026)
-            humanJsClick(method);
-            if (confirmWindowIfShown(METHOD_CONFIRM_TIMEOUT))
+            method.click(usingJavaScript());
+            if (BattleMethods.asksConfirmation(icon) && confirmWindowIfShown(METHOD_CONFIRM_TIMEOUT))
                 log.info("The method was confirmed in the window");
+            sleep(AFTER_METHOD_PAUSE_MS);
         }
-        waitAboutSomeSeconds(1);
     }
 
     /**
@@ -219,10 +242,9 @@ public class BattlePage extends BasePage {
         SelenideElement petBtn = $(PET_METHOD);
         if (!petBtn.isDisplayed())
             return;
-        humanClick(petBtn);
-        confirmWindowIfShown(METHOD_CONFIRM_TIMEOUT);
+        petBtn.click(usingJavaScript());
         log.info("Pet action «{}» is used", PET_ACTION);
-        waitAboutSomeSeconds(1);
+        sleep(AFTER_METHOD_PAUSE_MS);
     }
 
     /**
@@ -247,6 +269,7 @@ public class BattlePage extends BasePage {
             return;
         try {
             commitBtn.click();
+            log.info("The move is made");
         } catch (UIAssertionError e) {
             // «Вперёд» пропала, пока выбирали удары: обычно персонаж погиб от чужого удара (29.10.2026).
             // Это не ошибка, цикл боя увидит «Выйти» или «Вернуться»

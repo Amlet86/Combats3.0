@@ -7,6 +7,7 @@ import java.util.Objects;
 import javax.swing.*;
 
 import com.combats.telegram.TelegramService;
+import com.combats.utils.PvpProfile;
 import net.miginfocom.swing.MigLayout;
 
 import static com.combats.utils.Properties.*;
@@ -30,6 +31,7 @@ public class LoginForm extends JFrame {
 
     private final JRadioButton pvpRadio = new JRadioButton("PvP", true);
     private final JRadioButton dungeonRadio = new JRadioButton("Dungeon");
+    private final JComboBox<PvpProfile> pvpProfileBox = new JComboBox<>(PvpProfile.values());
     private final JCheckBox petCheck = new JCheckBox("Pet");
     private final JCheckBox browserOffCheck = new JCheckBox("Browser off");
 
@@ -51,6 +53,8 @@ public class LoginForm extends JFrame {
         ButtonGroup typeOfGame = new ButtonGroup();
         typeOfGame.add(pvpRadio);
         typeOfGame.add(dungeonRadio);
+        pvpProfileBox.setSelectedItem(getPvpProfile());
+        pvpRadio.addItemListener(e -> pvpProfileBox.setEnabled(pvpRadio.isSelected()));
 
         telegramOwnerField.setToolTipText("Your Telegram username: only this user can control the bot. "
                 + "Leave Owner or Token empty to play without Telegram");
@@ -66,6 +70,7 @@ public class LoginForm extends JFrame {
         form.add(new JLabel("Password:"));
         form.add(passwordField);
         form.add(pair(pvpRadio, dungeonRadio), "skip");
+        form.add(pvpProfileBox, "skip, growx 0");
         form.add(pair(petCheck, browserOffCheck), "skip");
         form.add(new JLabel("End time:"));
         form.add(endTimeHours, "split 4, growx 0");
@@ -114,6 +119,7 @@ public class LoginForm extends JFrame {
         setUserPassword(String.valueOf(passwordField.getPassword()));
 
         setTypeOfGame(pvpRadio.isSelected());
+        setPvpProfile((PvpProfile) Objects.requireNonNull(pvpProfileBox.getSelectedItem()));
         setPet(petCheck.isSelected());
         setHeadless(browserOffCheck.isSelected());
 

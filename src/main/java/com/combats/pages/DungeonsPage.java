@@ -50,6 +50,8 @@ public class DungeonsPage extends BasePage {
      * в другую часть этажа и сбивает счёт клеток, а от некоторых грибов персонаж подцепил болезнь.
      */
     private static final List<String> SAFE_OBJECTS = List.of("тайник", "Ниша", "Слизкое нечто", "Чудодейственная лужа");
+    /** Так игра отвечает, если объект за стеной: ссылка на него есть, а открыть его отсюда нельзя (07.11.2026). */
+    private static final String UNREACHABLE_OBJECT = "Недостижимая цель";
     private static final int RECOVERED_HP_PERCENT = 80;
     private static final int MAX_FAILED_STEPS = 3;
     /**
@@ -130,6 +132,8 @@ public class DungeonsPage extends BasePage {
     /** Обход живёт весь поход, через бои: после боя продолжаем с той же клетки. */
     private static final DungeonExplorer explorer = new DungeonExplorer();
     private static final Set<String> usedObjects = new HashSet<>();
+    /** Объекты вместе с клетками, откуда игра их не открыла: с другой клетки пробуем снова. */
+    private static final Set<String> unreachableObjects = new HashSet<>();
     private static int floor;
     /**
      * Где персонаж стоял, когда бот последний раз смотрел на карту. Если после боя он в другом месте, значит,
@@ -152,6 +156,7 @@ public class DungeonsPage extends BasePage {
     static void startRun() {
         explorer.reset();
         usedObjects.clear();
+        unreachableObjects.clear();
         floor = 0;
         lastPlace = null;
         descentAttempts = 0;
@@ -606,23 +611,32 @@ public class DungeonsPage extends BasePage {
     }
 
     /**
-     * Открывает один безопасный объект ({@link #SAFE_OBJECTS}). Ссылка {@code useobj} есть только у тех, до
-     * которых можно дотянуться: у дальних объектов и у монстров её нет (снято 03.11.2026). Каждый объект
-     * пробуем один раз за поход, чтобы не застрять, если игра отказывает («Нельзя открыть тайник, пока
-     * кто-то из монстров ошивается поблизости»).
+     * Открывает один безопасный объект ({@link #SAFE_OBJECTS}). У дальних объектов и у монстров ссылки
+     * {@code useobj} нет (снято 03.11.2026), но у ниш за стеной она есть. Каждый объект пробуем один раз за
+     * поход, чтобы не застрять, если игра отказывает («Нельзя открыть тайник, пока кто-то из монстров ошивается
+     * поблизости»). Исключение {@link #UNREACHABLE_OBJECT}: на 2-м этаже Грибницы ниши с ключами видны из-за
+     * стены с C10 и G2, а открываются с B10 и H3, поэтому такой объект пробуем снова с другой клетки.
      *
      * @return true, если что-то открыли
      */
     private boolean useObject(DungeonView view) {
         for (DungeonView.Link object : view.objects()) {
-            if (usedObjects.contains(object.action()) || SAFE_OBJECTS.stream().noneMatch(object.title()::contains))
+            String objectAtPlace = object.action() + "|" + view.place();
+            if (usedObjects.contains(object.action()) || unreachableObjects.contains(objectAtPlace)
+                    || SAFE_OBJECTS.stream().noneMatch(object.title()::contains))
                 continue;
             usedObjects.add(object.action());
             status("Opening «" + object.title() + "»");
             act(object.action());
             waitAboutSomeSeconds(2);
-            if (where() == Place.DUNGEON)
-                log.info("«{}»: {}", object.title(), view().message());
+            if (where() == Place.DUNGEON) {
+                String answer = view().message();
+                log.info("«{}»: {}", object.title(), answer);
+                if (answer.contains(UNREACHABLE_OBJECT)) {
+                    usedObjects.remove(object.action());
+                    unreachableObjects.add(objectAtPlace);
+                }
+            }
             return true;
         }
         return false;

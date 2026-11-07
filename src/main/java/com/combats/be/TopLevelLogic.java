@@ -14,6 +14,7 @@ import com.combats.exception.GameStoppedException;
 import com.combats.exception.GameTimeIsOverException;
 import com.combats.utils.LogContext;
 import com.combats.utils.Notifications;
+import com.combats.utils.PvpProfile;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -22,6 +23,7 @@ import static com.codeborne.selenide.Selenide.switchTo;
 import static com.combats.utils.GameControl.checkStop;
 import static com.combats.utils.GameControl.isStopRequested;
 import static com.combats.utils.GameControl.status;
+import static com.combats.utils.Properties.getPvpProfile;
 import static com.combats.utils.Properties.getTypeOfGame;
 import static com.combats.utils.Properties.isHeadless;
 import static com.combats.utils.Utils.checkGameCanContinue;
@@ -58,14 +60,18 @@ public class TopLevelLogic extends BaseLevelLogic {
     }
 
     /**
-     * Один круг игры: бой в выбранном режиме. После PvP-боя бот ждёт восстановления HP.
+     * Один круг игры: бой в выбранном режиме. После хаотичного боя бот ждёт восстановления HP,
+     * в Лиге он восстанавливается в начале круга.
      * До и после боя отправляет итоги боёв из чата: после смерти итог появляется позже, когда
      * бой закончится у всех.
      */
     private void actionsInGame() {
         ChatPage.reportNewBattleResults();
         log.info("Battle {} begins", LogContext.nextBattle());
-        if (getTypeOfGame()) {
+        if (getTypeOfGame() && getPvpProfile() == PvpProfile.LEAGUE) {
+            league();
+            ChatPage.reportNewBattleResults();
+        } else if (getTypeOfGame()) {
             PvP();
             ChatPage.reportNewBattleResults();
             new CityPage().waitForHpRecovery();

@@ -24,6 +24,10 @@ public class CityPage extends BasePage {
     private static final Logger log = LoggerFactory.getLogger(CityPage.class);
 
     private static final int RECOVERED_HP_PERCENT = 80;
+    private static final int FULL_HP_PERCENT = 100;
+    /** Комнаты города East для боёв Лиги (снято 06.11.2026): из Таверны в Комнату Знахаря и обратно. */
+    private static final String DOCTOR_ROOM = "Комната Знахаря";
+    private static final String TAVERN = "Таверна";
     private static final Duration MAX_HP_RECOVERY_TIME = Duration.ofMinutes(15);
     private static final Duration HP_CHECK_INTERVAL = Duration.ofSeconds(10);
     private static final int ATTEMPTS_TO_FIND_HP = 6;
@@ -51,10 +55,48 @@ public class CityPage extends BasePage {
     }
 
     /**
-     * Ждёт, пока HP восстановится после боя.
-     * Если HP на странице не найдено, ждёт около 5 минут, как раньше.
+     * Подготовка к бою Лиги: идёт в Комнату Знахаря, ждёт 100% HP и возвращается в Таверну, где можно
+     * подавать заявку. Активен должен быть фрейм игры, после метода он тоже активен.
+     */
+    public LeagueApplicationPage recoverInDoctorRoom() {
+        takeDailyQuest();
+        goToRoom(DOCTOR_ROOM);
+        // waitForHpRecovery() сам переходит во фрейм игры, а выходит в основной документ
+        switchTo().defaultContent();
+        waitForHpRecovery(FULL_HP_PERCENT);
+        switchToGameFrame();
+        goToRoom(TAVERN);
+        return page(LeagueApplicationPage.class);
+    }
+
+    /**
+     * Переходит в соседнюю комнату. Если перехода нет, персонаж, скорее всего, уже в ней.
+     */
+    private void goToRoom(String room) {
+        waitForPendingMove();
+        SelenideElement door = nearestTransition(List.of(room));
+        if (door == null) {
+            log.info("There is no way to «{}» from here, stay", room);
+            return;
+        }
+        status("Going to «" + room + "»");
+        humanJsClick(door);
+        waitAboutSomeSeconds(2);
+        waitForPendingMove();
+    }
+
+    /**
+     * Ждёт, пока HP восстановится после хаотичного боя.
      */
     public void waitForHpRecovery() {
+        waitForHpRecovery(RECOVERED_HP_PERCENT);
+    }
+
+    /**
+     * Ждёт, пока HP восстановится до нужного процента.
+     * Если HP на странице не найдено, ждёт около 5 минут, как раньше.
+     */
+    private void waitForHpRecovery(int recoveredPercent) {
         switchToGameFrame();
         try {
             Instant deadline = Instant.now().plus(MAX_HP_RECOVERY_TIME);
@@ -71,7 +113,7 @@ public class CityPage extends BasePage {
                         waiting(300, 310);
                         return;
                     }
-                } else if (hpPercent >= RECOVERED_HP_PERCENT) {
+                } else if (hpPercent >= recoveredPercent) {
                     log.info("HP is recovered: {}", hp.getText());
                     return;
                 }

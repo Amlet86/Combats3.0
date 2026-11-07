@@ -11,6 +11,7 @@ public class Properties {
     private static String userLogin;
     private static String userPassword;
     private static boolean typeOfGame;
+    private static PvpProfile pvpProfile = PvpProfile.CHAOS;
     private static boolean pet;
     private static int endTimeHours;
     private static int endTimeMinutes;
@@ -49,7 +50,17 @@ public class Properties {
         Properties.userPassword = userPassword;
     }
 
-    /** @return true — режим PvP (хаотичные бои), false — PvE (подземелье) */
+    /** @return какие PvP-бои играет бот; имеет значение только в режиме PvP */
+    public static PvpProfile getPvpProfile() {
+        return pvpProfile;
+    }
+
+    /** Задаёт профиль PvP-боёв. */
+    public static void setPvpProfile(PvpProfile pvpProfile) {
+        Properties.pvpProfile = pvpProfile;
+    }
+
+    /** @return true — режим PvP (бои по {@link #getPvpProfile()}), false — PvE (подземелье) */
     public static boolean getTypeOfGame() {
         return typeOfGame;
     }

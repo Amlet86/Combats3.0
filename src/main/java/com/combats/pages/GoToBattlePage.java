@@ -374,7 +374,7 @@ public class GoToBattlePage extends BasePage {
      * Второй признак нужен, потому что при старте боя игра иногда перезагружает весь верхний
      * документ, и адрес фрейма прочитать не получается.
      */
-    private static boolean battleStarted() {
+    static boolean battleStarted() {
         if (isBattlePage(gameFramePath()))
             return true;
         try {
