@@ -52,6 +52,11 @@ public class DungeonsPage extends BasePage {
     private static final List<String> SAFE_OBJECTS = List.of("тайник", "Ниша", "Слизкое нечто", "Чудодейственная лужа");
     /** Так игра отвечает, если объект за стеной: ссылка на него есть, а открыть его отсюда нельзя (07.11.2026). */
     private static final String UNREACHABLE_OBJECT = "Недостижимая цель";
+    /**
+     * Так игра отвечает, если рядом монстры (08.11.2026: с B9 2-го этажа Грибницы видна ниша B10, а в A9 монстры).
+     * Ниша не открыта, поэтому, как и с {@link #UNREACHABLE_OBJECT}, пробуем её снова с другой клетки.
+     */
+    private static final String MONSTERS_AROUND = "Вы опасаетесь";
     private static final int RECOVERED_HP_PERCENT = 80;
     private static final int MAX_FAILED_STEPS = 3;
     /**
@@ -616,6 +621,7 @@ public class DungeonsPage extends BasePage {
      * поход, чтобы не застрять, если игра отказывает («Нельзя открыть тайник, пока кто-то из монстров ошивается
      * поблизости»). Исключение {@link #UNREACHABLE_OBJECT}: на 2-м этаже Грибницы ниши с ключами видны из-за
      * стены с C10 и G2, а открываются с B10 и H3, поэтому такой объект пробуем снова с другой клетки.
+     * Так же поступаем, если открыть не дали монстры поблизости ({@link #MONSTERS_AROUND}).
      *
      * @return true, если что-то открыли
      */
@@ -632,7 +638,7 @@ public class DungeonsPage extends BasePage {
             if (where() == Place.DUNGEON) {
                 String answer = view().message();
                 log.info("«{}»: {}", object.title(), answer);
-                if (answer.contains(UNREACHABLE_OBJECT)) {
+                if (tryFromAnotherCell(answer)) {
                     usedObjects.remove(object.action());
                     unreachableObjects.add(objectAtPlace);
                 }
@@ -640,6 +646,13 @@ public class DungeonsPage extends BasePage {
             return true;
         }
         return false;
+    }
+
+    /**
+     * @return true, если объект не открылся и его стоит попробовать с другой клетки: он за стеной или рядом монстры
+     */
+    static boolean tryFromAnotherCell(String answer) {
+        return answer.contains(UNREACHABLE_OBJECT) || answer.contains(MONSTERS_AROUND);
     }
 
     /**
